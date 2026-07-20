@@ -1,34 +1,86 @@
-# EDG Intranet - Python FastAPI Administration & Content API (Modular Structure)
+# API — Intranet Électricité de Guinée (FastAPI)
 
-Service d'API moderne développé en **Python (FastAPI)** gérant le portail collaboratif intranet de l'**Électricité de Guinée (EDG) S.A.**
-Cette architecture est structurée sous la racine `/api` et remplace les données statiques par une base relationnelle SQLite locale avec validation stricte Pydantic.
+Service d'API en **Python / FastAPI** qui alimente le portail intranet de
+l'**Électricité de Guinée (EDG) S.A.**
 
-## 🏗️ Structure Modulaire du Répertoire `/api`
+> Pour installer et lancer le projet complet, voir le [README principal](../README.md).
+> Ce document décrit l'API elle-même.
+
+## Base de données
+
+L'application utilise **MySQL** (`DB_TYPE=mysql`). SQLite reste employé pour les
+tests automatisés, via une couche d'abstraction qui traduit les paramètres `?` en `%s`.
+
+Le schéma est **créé et migré automatiquement au démarrage** (`CREATE TABLE IF NOT
+EXISTS` et ajouts de colonnes idempotents) : aucun script SQL n'est à exécuter à la
+main, aucun export n'est à maintenir. Les connexions MySQL passent par un **pool**
+(DBUtils) pour éviter d'ouvrir une connexion par requête.
+
+## Structure
+
 ```text
-/api
-├── __init__.py
-├── main.py                # Point d'entrée de l'application FastAPI, middleware CORS, montage des sous-routers
-├── database.py            # Initialisation transactionnelle SQLite et seeding des 12 directions institutionnelles
-├── models.py              # Schémas de validation et de sortie Pydantic (Departments, Articles, Admin)
-├── requirements.txt       # Spécification des dépendances pip
+api/
+├── main.py                 # Point d'entrée : middlewares, en-têtes de sécurité,
+│                           # CORS, gestionnaires d'erreurs, service du build dist/
+├── database.py             # Schéma, migrations, pool de connexions, données initiales
+├── auth.py                 # Sessions, politique de mot de passe, dépendances de rôle
+├── models.py               # Schémas Pydantic (entrée / sortie)
+├── email_util.py           # Envoi SMTP (dégradé proprement si non configuré)
+├── sanitize.py             # Assainissement HTML anti-XSS (nh3)
+├── requirements.txt
 └── routes/
-    ├── __init__.py
-    ├── admin.py           # Endpoints d'administration sécurisés (sauvegarde transactionnelle, logo, etc.)
-    ├── articles.py        # Endpoints de requêtes et de filtrage dynamique des actualités
-    └── departments.py     # Endpoints publics de consultation des directions d'entreprise
+    ├── auth.py             # Connexion, déconnexion, session, mot de passe, audit
+    ├── users.py            # Gestion des comptes (administrateur)
+    ├── departments.py      # Directions
+    ├── postes.py           # Organigramme des postes (hiérarchie par parent_id)
+    ├── team.py             # Membres d'équipe
+    ├── articles.py         # Actualités
+    ├── documents.py        # Bibliothèque documentaire
+    ├── events.py           # Agenda institutionnel
+    ├── tickets.py          # Guichet d'assistance
+    ├── uploads.py          # Téléversement de fichiers
+    ├── user_notifications.py  # Notifications dans l'application
+    └── admin.py            # Directions, applications, paramètres, logo
 ```
 
-## 📡 Liste des Principales Routes d'API
+## Sécurité
 
-### Directions d'entreprise (`/departments`)
-* **`GET /departments`** : Retourne la liste des 12 collèges administratifs guinéens (conseils, directeurs, années d'érection, effectifs, codes, thématiques).
+- **Session par cookie httpOnly** (`edg_session`), signée en JWT, glissante sur
+  30 minutes d'inactivité. Aucun jeton n'est accessible au JavaScript.
+- **bcrypt** pour les mots de passe (hachage irréversible).
+- **Blocage du compte** après 5 échecs consécutifs, avec journal d'audit.
+- Politique de mot de passe : 12 caractères minimum, majuscule, minuscule, chiffre,
+  caractère spécial `@$!%*?&#`, sans caractère accentué.
+- **Réinitialisation par e-mail** : jeton aléatoire stocké haché en SHA-256,
+  valable 1 heure et invalidé après usage.
+- Les erreurs 500 sont journalisées côté serveur et renvoient un message générique,
+  sans jamais exposer de détail interne au client.
+- Téléversements restreints aux extensions d'images sûres (le SVG est refusé,
+  car il peut porter du script).
 
-### Actualités & Communication (`/articles`)
-* **`GET /articles`** : Récupère les articles en transit sur l'intranet. Supporte le filtrage dynamique :
-  * `department_id` : Pour isoler l'activité locale d'un département.
-  * `is_global` : Pour isoler les annonces à l'échelle de l'entreprise S.A.
-  * `q` : Recherche textuelle par mots-clés de titre ou de contenu.
+## Rôles
 
-### Administration (`/admin`)
-* **`GET /admin/directions`** : Consultation des structures existantes pour l'écran de modification.
-* **`POST /admin/direction/save`** : Sauvegarde transactionnelle multifragment (`multipart/form-data`) acceptant le téléversement optionnel du logo, contrôle de types / extensions autorisées et limitations de taille.
+`agent` · `chef_service` · `rh_direction` · `administrateur`
+
+Le cloisonnement par direction s'appuie sur `users.unity_id`. Un `rh_direction`
+sans direction rattachée dispose d'une vue globale (RH central) ; avec une
+direction, sa portée y est limitée.
+
+## Documentation interactive
+
+En environnement de développement, FastAPI expose :
+
+- **<http://127.0.0.1:8000/docs>** — Swagger UI
+- **<http://127.0.0.1:8000/redoc>** — ReDoc
+
+Ces deux routes sont **désactivées automatiquement** lorsque `APP_ENV=production`.
+
+## Tests
+
+```bash
+python -m pip install -r ../requirements-dev.txt
+python -m pytest
+```
+
+Couverture : authentification, contrôle d'accès par rôle, assainissement HTML et
+guichet de tickets. Les tests utilisent SQLite et ne touchent jamais la base MySQL.
