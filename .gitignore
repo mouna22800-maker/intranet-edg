@@ -1,0 +1,27 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Python / tests
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Base SQLite locale / de test
+*.db
+
+# Contenu téléversé par les utilisateurs (à sauvegarder hors git)
+public/uploads/*
+!public/uploads/.gitkeep
+
+# Originaux PNG haute résolution (~10 Mo), non utilisés par l'application :
+# les visuels réellement servis sont les WebP optimisés de public/images/.
+# Conservés sur le disque local comme sources, mais hors du dépôt pour ne pas l'alourdir.
+src/assets/images/

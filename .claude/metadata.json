@@ -1,0 +1,6 @@
+{
+  "name": "Intranet EDG",
+  "description": "Portail intranet multi-département de l'Electricité de Guinée (EDG). Consultation libre des actualités, applications et signalement d'incidents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

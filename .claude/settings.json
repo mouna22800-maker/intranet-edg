@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:ckeditor.com)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\")",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue)",
+      "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;\" + $env:Path; node _pw_admin_check.mjs)",
+      "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;\" + $env:Path; npm run lint)",
+      "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;\" + $env:Path; node _pw_dynamic_sections.mjs)",
+      "Read(//c/Users/DDER/AppData/Local/Temp/claude/**)",
+      "PowerShell(Remove-Item \"c:\\\\Users\\\\DDER\\\\Downloads\\\\intranet-edg\\\\_pw_dynamic_sections.mjs\" -Force -Confirm:$false -ErrorAction SilentlyContinue)",
+      "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;\" + $env:Path; node _pw_verify_fix.mjs)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\DDER\\Downloads\\intranet-edg"
+    ]
+  }
+}
