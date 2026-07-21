@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 import datetime
+import secrets
 from dotenv import load_dotenv
 from api.auth import hash_password
 
@@ -17,6 +18,11 @@ UPLOAD_DIR = os.path.join(os.path.dirname(API_DIR), "public", "uploads")
 
 # S'assurer que le dossier des téléversements existe au niveau de public/uploads
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# APP_ENV pilote le durcissement (voir aussi api/main.py). En "production", on ne crée
+# jamais les comptes de démonstration à mots de passe connus (voir le seed plus bas).
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+IS_PROD = APP_ENV == "production"
 
 
 class DatabaseCursorWrapper:
@@ -1400,25 +1406,53 @@ def init_db():
     rh_id = _unity_id_for_code("rh")
     dg_id = _unity_id_for_code("dg")
 
-    # Seed Users (comptes de démonstration, mots de passe hachés via bcrypt) - idempotent
-    # Modèle de rôles EDG : agent, chef_service, rh_direction (direction=NULL -> RH central, sinon Directeur), administrateur
-    demo_users = [
-        ("Kadiatou Bah", "agent@edg.com.gn", "agent", "agent",
-         dsi_id, "Direction des Systèmes d'Information (DSI)", "dsi", "Agent de Support Informatique"),
-        ("Alpha Oumar Barry", "chef@edg.com.gn", "chef_service", "chef_service",
-         finance_id, "Direction des Affaires Financières", "finance", "Chef du Service Comptabilité"),
-        ("Mariama Barry", "rh@edg.com.gn", "rh_direction", "rh_direction",
-         None, "Ressources Humaines (Direction Générale)", "", "Directrice des Ressources Humaines"),
-        ("Amadou Diallo", "admin@edg.com.gn", "administrateur", "administrateur",
-         None, "Direction des Systèmes d'Information (DSI)", "dsi", "Administrateur Système Intranet"),
-    ]
-    for name, email, password, role, unity_id, dept_name, dept_code, title in demo_users:
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+    # Seed Users - idempotent, mots de passe hachés via bcrypt.
+    if IS_PROD:
+        # PRODUCTION : jamais de comptes de démonstration à mot de passe connu.
+        # On provisionne UNIQUEMENT un administrateur initial, avec un mot de passe
+        # ALÉATOIRE affiché une seule fois dans le journal serveur et changement
+        # OBLIGATOIRE à la première connexion (must_change_password = 1).
+        # L'e-mail est surchargeable via la variable d'environnement ADMIN_EMAIL.
+        admin_email = (os.getenv("ADMIN_EMAIL") or "admin@edg.com.gn").strip()
+        cursor.execute("SELECT id FROM users WHERE role = 'administrateur' LIMIT 1")
         if not cursor.fetchone():
+            temp_password = secrets.token_urlsafe(12)
             cursor.execute("""
-                INSERT INTO users (name, email, password_hash, role, unity_id, department_name, department_code, title, password_changed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (name, email, hash_password(password), role, unity_id, dept_name, dept_code, title, datetime.datetime.utcnow().isoformat()))
+                INSERT INTO users (name, email, password_hash, role, unity_id, department_name, department_code, title, password_changed_at, must_change_password)
+                VALUES (?, ?, ?, 'administrateur', NULL, ?, ?, ?, ?, 1)
+            """, ("Administrateur", admin_email, hash_password(temp_password),
+                  "Direction Générale", "dg", "Administrateur Système Intranet",
+                  datetime.datetime.utcnow().isoformat()))
+            print(
+                "\n" + "=" * 74 +
+                "\n  COMPTE ADMINISTRATEUR INITIAL CREE (APP_ENV=production)" +
+                "\n  E-mail        : " + admin_email +
+                "\n  Mot de passe  : " + temp_password +
+                "\n  --> Connectez-vous et changez-le IMMEDIATEMENT (exige a la 1re connexion)." +
+                "\n      Affiche une seule fois, non recuperable ensuite." +
+                "\n" + "=" * 74 + "\n",
+                flush=True,
+            )
+    else:
+        # DÉVELOPPEMENT : comptes de démonstration (un par rôle) pour faciliter les tests.
+        # Modèle de rôles EDG : agent, chef_service, rh_direction (direction=NULL -> RH central, sinon Directeur), administrateur
+        demo_users = [
+            ("Kadiatou Bah", "agent@edg.com.gn", "agent", "agent",
+             dsi_id, "Direction des Systèmes d'Information (DSI)", "dsi", "Agent de Support Informatique"),
+            ("Alpha Oumar Barry", "chef@edg.com.gn", "chef_service", "chef_service",
+             finance_id, "Direction des Affaires Financières", "finance", "Chef du Service Comptabilité"),
+            ("Mariama Barry", "rh@edg.com.gn", "rh_direction", "rh_direction",
+             None, "Ressources Humaines (Direction Générale)", "", "Directrice des Ressources Humaines"),
+            ("Amadou Diallo", "admin@edg.com.gn", "administrateur", "administrateur",
+             None, "Direction des Systèmes d'Information (DSI)", "dsi", "Administrateur Système Intranet"),
+        ]
+        for name, email, password, role, unity_id, dept_name, dept_code, title in demo_users:
+            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+            if not cursor.fetchone():
+                cursor.execute("""
+                    INSERT INTO users (name, email, password_hash, role, unity_id, department_name, department_code, title, password_changed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (name, email, hash_password(password), role, unity_id, dept_name, dept_code, title, datetime.datetime.utcnow().isoformat()))
 
     # Seed Postes (organigramme des FONCTIONS) - une fois, à partir des directions existantes.
     # Racine = Directeur Général ; un poste de directeur par direction, rattaché au DG.

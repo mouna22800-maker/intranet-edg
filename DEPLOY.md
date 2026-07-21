@@ -79,6 +79,21 @@ WantedBy=multi-user.target
 sudo systemctl enable --now edg-intranet
 ```
 
+### Première connexion administrateur
+
+En `APP_ENV=production`, **aucun compte de démonstration n'est créé**. Au tout premier
+démarrage, un administrateur unique est provisionné avec l'adresse `ADMIN_EMAIL` du `.env`
+et un **mot de passe aléatoire affiché une seule fois dans le journal du serveur** :
+
+```bash
+sudo journalctl -u edg-intranet | grep -A6 "COMPTE ADMINISTRATEUR INITIAL"
+```
+
+Connectez-vous avec ce mot de passe : le changement est **exigé dès la première connexion**.
+Le mot de passe n'est pas récupérable ensuite — s'il est perdu avant d'être changé,
+supprimez la ligne de la table `users` puis redémarrez le service pour en régénérer un
+(ou utilisez « Mot de passe oublié » si le SMTP est configuré).
+
 ## 6. HTTPS — reverse proxy
 
 ### Option A — Caddy (le plus simple, certificat automatique)
@@ -136,10 +151,13 @@ tar czf /backups/uploads_$(date +\%F).tar.gz /opt/edg-intranet/public/uploads
 ## Checklist de mise en ligne
 
 - [ ] `APP_ENV=production`, `JWT_SECRET_KEY` fort, `COOKIE_SECURE=true`, `CORS_ORIGINS` = domaine réel
+- [ ] `ADMIN_EMAIL` défini (adresse de l'administrateur initial)
 - [ ] MySQL : utilisateur dédié (pas root), mot de passe fort
 - [ ] `npm run build` effectué (dossier `dist/` présent)
 - [ ] Reverse proxy HTTPS actif (Caddy ou nginx) — le port 8000 n'est PAS exposé publiquement
 - [ ] `/docs` renvoie bien 404 en production
+- [ ] **Mot de passe admin initial** récupéré dans les logs et changé dès la 1re connexion
+- [ ] Aucun compte de démo présent (`SELECT email FROM users;` ne doit lister que l'admin)
 - [ ] Sauvegardes planifiées (base + uploads)
-- [ ] (Recommandé ensuite) mot de passe oublié par e-mail, découpage du bundle JS, restreindre/retirer le SVG des uploads
+- [ ] (Optionnel) SMTP configuré pour « mot de passe oublié » (sinon le lien est seulement journalisé)
 ```
