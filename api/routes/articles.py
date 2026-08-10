@@ -3,7 +3,7 @@ from typing import List, Optional
 from api.database import get_db_connection, create_user_notification
 from api.models import ArticleResponse, ArticleBase
 from api.auth import get_current_user, require_write_department
-from api.sanitize import sanitize_html
+from api.sanitize import sanitize_html, sanitize_plain
 import datetime
 import json
 
@@ -23,6 +23,18 @@ def _parse_files(raw):
     except (TypeError, ValueError):
         return []
 
+
+# Catégories d'annonce autorisées (l'auteur choisit au moment de publier). Toute valeur inconnue
+# retombe sur "communique" pour éviter de stocker n'importe quoi.
+VALID_CATEGORIES = {
+    "communique", "deces", "mariage", "naissance",
+    "retraite", "recrue", "projet", "evenement",
+}
+
+
+def _norm_category(value):
+    return value if value in VALID_CATEGORIES else "communique"
+
 @router.get("", response_model=List[ArticleResponse])
 def get_public_articles(
     department_id: Optional[int] = Query(None, description="Filtrer par ID de l'unité locale"),
@@ -35,7 +47,7 @@ def get_public_articles(
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        query = "SELECT id, unity_id, label, excerpt, description, images, files, type, created_at FROM news WHERE 1=1"
+        query = "SELECT id, unity_id, label, excerpt, description, images, files, type, category, created_at FROM news WHERE 1=1"
         params = []
 
         if department_id is not None:
@@ -81,6 +93,7 @@ def get_public_articles(
                 "title": r["label"],
                 "excerpt": excerpt,
                 "content": content,
+                "category": _norm_category(r["category"]),
                 "tags": ["EDG", "Intranet"], # tags fictifs ou stockés dans les métadonnées
                 "isGlobal": r["type"] == 1,
                 "departmentId": r["unity_id"],
@@ -100,6 +113,9 @@ def create_article(article: ArticleBase, current_user: dict = Depends(get_curren
     require_write_department(article.departmentId, current_user)
     # Anti XSS stocké : le corps est du HTML riche affiché tel quel côté client => on l'assainit.
     safe_content = sanitize_html(article.content)
+    # Le chapeau est affiché en TEXTE BRUT : on retire tout balisage HTML éventuel (ex. chapeau
+    # auto-généré depuis le contenu enrichi) pour ne pas afficher de <strong> littéral.
+    safe_excerpt = sanitize_plain(article.excerpt)
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -107,19 +123,21 @@ def create_article(article: ArticleBase, current_user: dict = Depends(get_curren
 
         # type_news : 1 pour Global, 2 pour Local
         news_type = 1 if article.isGlobal else 2
+        safe_category = _norm_category(article.category)
         files_json = json.dumps([f.model_dump() for f in article.files])
 
         cursor.execute("""
-            INSERT INTO news (unity_id, label, excerpt, description, images, files, type, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO news (unity_id, label, excerpt, description, images, files, type, category, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             article.departmentId,
             article.title,
-            article.excerpt,
+            safe_excerpt,
             safe_content,
             article.image or "",
             files_json,
             news_type,
+            safe_category,
             created_at_iso
         ))
         new_id = cursor.lastrowid
@@ -140,8 +158,9 @@ def create_article(article: ArticleBase, current_user: dict = Depends(get_curren
         return {
             "id": new_id,
             "title": article.title,
-            "excerpt": article.excerpt,
+            "excerpt": safe_excerpt,
             "content": safe_content,
+            "category": safe_category,
             "tags": article.tags,
             "isGlobal": article.isGlobal,
             "departmentId": article.departmentId,
@@ -170,29 +189,33 @@ def update_article(id: int, article: ArticleBase, current_user: dict = Depends(g
         created_at_iso = row["created_at"]
 
         news_type = 1 if article.isGlobal else 2
+        safe_category = _norm_category(article.category)
         files_json = json.dumps([f.model_dump() for f in article.files])
         safe_content = sanitize_html(article.content)  # anti XSS stocké
+        safe_excerpt = sanitize_plain(article.excerpt)  # chapeau affiché en texte brut => sans balises
 
         cursor.execute("""
             UPDATE news
-            SET unity_id = ?, label = ?, excerpt = ?, description = ?, images = ?, files = ?, type = ?
+            SET unity_id = ?, label = ?, excerpt = ?, description = ?, images = ?, files = ?, type = ?, category = ?
             WHERE id = ?
         """, (
             article.departmentId,
             article.title,
-            article.excerpt,
+            safe_excerpt,
             safe_content,
             article.image or "",
             files_json,
             news_type,
+            safe_category,
             id
         ))
         conn.commit()
         return {
             "id": id,
             "title": article.title,
-            "excerpt": article.excerpt,
+            "excerpt": safe_excerpt,
             "content": safe_content,
+            "category": safe_category,
             "tags": article.tags,
             "isGlobal": article.isGlobal,
             "departmentId": article.departmentId,

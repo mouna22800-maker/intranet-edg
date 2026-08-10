@@ -26,6 +26,19 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
 }
 
+h1[class*="uppercase"], h2[class*="uppercase"], h3[class*="uppercase"], h4[class*="uppercase"], h5[class*="uppercase"], h6[class*="uppercase"] {
+  text-transform: lowercase;
+}
+
+h1[class*="uppercase"]::first-letter,
+h2[class*="uppercase"]::first-letter,
+h3[class*="uppercase"]::first-letter,
+h4[class*="uppercase"]::first-letter,
+h5[class*="uppercase"]::first-letter,
+h6[class*="uppercase"]::first-letter {
+  text-transform: uppercase;
+}
+
 /* Rendu partagé du contenu riche CKEditor (actualités, projets, mission, engagements,
    valeurs, domaines, historique...). Les styles de police/couleur/alignement posés
    par CKEditor sont des styles inline et s'appliquent déjà tout seuls ; ces règles ne
@@ -422,6 +435,71 @@ input.border[class], select.border[class], textarea.border[class] {
   border-color: rgba(255, 255, 255, 0.14) !important;
 }
 
+/* ------------------------------------------------------------------
+   4. Console d'administration et en-tête — cohérence du thème sombre.
+   Une large partie des formulaires de la console (~140 déclarations) et des
+   panneaux de l'en-tête (recherche, modales) a été écrite avec des utilitaires
+   clairs uniquement : bg-white, bg-slate-50/100, text-slate-700 à 900. En thème
+   sombre, cela produisait des encadrés blancs et des titres encre illisibles.
+   Plutôt que de dupliquer ces déclarations dans le JSX, on redéfinit ces
+   utilitaires ICI, mais :
+     - uniquement dans ces deux zones (#cms-dashboard-container, #edg-header) ;
+     - uniquement si l'élément ne déclare pas déjà sa propre variante dark:,
+       afin de ne jamais écraser un choix explicite.
+   NB : les rares cas de texte foncé VOULU sur fond coloré vif (pastilles
+   bg-emerald-400/500) ont reçu un `dark:text-slate-900` explicite, ce qui les
+   exclut automatiquement des règles ci-dessous.
+   ------------------------------------------------------------------ */
+
+/* Fonds */
+.dark :is(#cms-dashboard-container, #edg-header) .bg-white:not([class*="dark:bg"]) {
+  background-color: rgba(2, 6, 23, 0.55) !important;
+}
+.dark :is(#cms-dashboard-container, #edg-header) .bg-slate-50:not([class*="dark:bg"]),
+.dark :is(#cms-dashboard-container, #edg-header) .bg-slate-50\/70:not([class*="dark:bg"]),
+.dark :is(#cms-dashboard-container, #edg-header) .bg-slate-50\/50:not([class*="dark:bg"]) {
+  background-color: rgba(255, 255, 255, 0.035) !important;
+}
+.dark :is(#cms-dashboard-container, #edg-header) .bg-slate-100:not([class*="dark:bg"]),
+.dark :is(#cms-dashboard-container, #edg-header) .bg-slate-150:not([class*="dark:bg"]) {
+  background-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* Survols */
+.dark :is(#cms-dashboard-container, #edg-header) .hover\:bg-slate-50:hover:not([class*="dark:hover:bg"]),
+.dark :is(#cms-dashboard-container, #edg-header) .hover\:bg-slate-50\/50:hover:not([class*="dark:hover:bg"]) {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+.dark :is(#cms-dashboard-container, #edg-header) .hover\:bg-slate-200:hover:not([class*="dark:hover:bg"]) {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* Textes : on remonte les gris « encre » vers des gris clairs lisibles */
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-955:not([class*="dark:text"]),
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-900:not([class*="dark:text"]),
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-850:not([class*="dark:text"]),
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-800:not([class*="dark:text"]) {
+  color: #e9eff3 !important;
+}
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-700:not([class*="dark:text"]),
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-650:not([class*="dark:text"]) {
+  color: #cbd5e1 !important;
+}
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-600:not([class*="dark:text"]) {
+  color: #b4c0cd !important;
+}
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-500:not([class*="dark:text"]),
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-450:not([class*="dark:text"]),
+.dark :is(#cms-dashboard-container, #edg-header) .text-slate-400:not([class*="dark:text"]) {
+  color: #94a3b8 !important;
+}
+
+/* Séparateurs de lignes de tableaux */
+.dark :is(#cms-dashboard-container, #edg-header) .divide-slate-150 > :not([hidden]) ~ :not([hidden]),
+.dark :is(#cms-dashboard-container, #edg-header) .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
 .iphone-glass-interactive:hover {
   background: rgba(255, 255, 255, 0.72);
   border-color: rgba(4, 131, 67, 0.32) !important;
@@ -464,6 +542,17 @@ input.border[class], select.border[class], textarea.border[class] {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(16, 133, 72, 0.4);
+}
+
+/* Masque la barre de défilement tout en conservant le défilement (sidebar app-shell) */
+.scrollbar-hide {
+  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;   /* IE / anciens Edge */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;              /* Chrome / Safari / Edge Chromium */
+  width: 0;
+  height: 0;
 }
 
 

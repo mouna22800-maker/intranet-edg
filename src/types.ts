@@ -15,6 +15,37 @@ export interface Poste {
   ordre?: number;
 }
 
+/**
+ * Organigrammes dynamiques et contextuels.
+ * - UnitEntity : une entité de l'organisation (ligne unity), réutilisable dans tous les contextes.
+ * - Workflow   : un contexte d'organigramme ("Organigramme Général", "Validation Application"…).
+ * - OrgNode    : place une entité dans un workflow avec SON parent DANS ce workflow.
+ *   La même entité peut donc avoir un parent différent d'un workflow à l'autre.
+ */
+export interface UnitEntity {
+  id: number;
+  code: string;
+  name: string;
+  type: string;                     // Direction / Département / Service…
+}
+
+export interface Workflow {
+  id: number;
+  label: string;
+  description?: string;
+}
+
+export interface OrgNode {
+  id: number;
+  workflowId: number;
+  unitId: number;
+  parentUnitId?: number | null;     // parent DANS ce workflow (null = racine)
+  ordre?: number;
+  name: string;
+  code: string;
+  type: string;
+}
+
 export interface Department {
   id: number;
   parentId?: number | null; // entité parente dans l'organigramme (null/absent = racine)
@@ -72,6 +103,7 @@ export interface Article {
   title: string;
   excerpt: string;
   content: string;
+  category?: string; // catégorie d'annonce : communique (défaut), deces, mariage, naissance, retraite, recrue, projet, evenement
   tags: string[];
   isGlobal: boolean;
   departmentId?: number; // associated department id
@@ -85,7 +117,8 @@ export interface Application {
   name: string;
   description: string;
   url: string;
-  icon: string; // Lucide icon name
+  icon: string; // Lucide icon name or fallback marker
+  logoUrl?: string; // Optional image URL for the app logo
   isGlobal: boolean;
   category: string; // ex: 'Productivité', 'Métier', 'Ressources'
   departmentId?: number; // associated department id for routing

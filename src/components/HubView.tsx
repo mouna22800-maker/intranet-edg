@@ -12,9 +12,10 @@ import {
   Shield, Download, User, Briefcase, Plus, Phone, Mail, Check, AlertCircle, Trash2, Folder, Lock, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { getDeptColorTheme } from './colorThemes';
+import { EMERALD_THEME } from './colorThemes';
 import { getMediaBgStyle as getArticleBgStyle } from './imageStyle';
 import { apiFetch } from '../api';
+import { ARTICLE_CATEGORIES, getArticleCategory } from './articleCategories';
 
 interface DirectoryTeamMember {
   id: string;
@@ -37,16 +38,40 @@ interface HubViewProps {
   authToken?: string | null;
 }
 
+// Cartes de directions (accueil) :
+//  - l'ICÔNE est ROUGE EDG en permanence (plus marquée au survol) ;
+//  - la CARTE prend un accent rouge discret au survol (bordure + ombre) ;
+//  - les ÉCRITURES (titre, « Rejoindre ») ne changent PAS de couleur.
+const DIRECTION_CARD_THEME = {
+  ...EMERALD_THEME,
+  cardBg: "bg-white hover:bg-red-50/40 border-slate-200/60 hover:border-red-300 transition-all duration-300 hover:shadow-lg",
+  cardBgDark: "dark:bg-slate-900/60 dark:border-slate-805/80 dark:hover:bg-slate-800/40 dark:hover:border-red-500/30 transition-all duration-300 hover:shadow-[0_8px_32px_rgba(226,27,35,0.10)]",
+  cardGlow: "hover:shadow-[0_8px_24px_rgba(226,27,35,0.05)] dark:hover:shadow-[0_12px_32px_rgba(226,27,35,0.16)]",
+  // Icône rouge par défaut, remplissage rouge plein au survol.
+  iconBg: "bg-red-50 text-[#E21B23] border border-red-200/60 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/40",
+  iconBgHover: "group-hover:bg-[#E21B23] group-hover:text-white dark:group-hover:bg-[#E21B23] dark:group-hover:text-white",
+  // Aucune coloration rouge sur les textes.
+  textHover: "",
+  actionText: "text-[#048343] dark:text-[#10b981]",
+};
+
 
 export default function HubView({ departments, globalArticles, globalApplications, onNavigate, currentUser, articles, siteSettings, teamMembers = [], authToken }: HubViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string>('all');
+
+  // Filtre par catégorie : l'Actualité est le point unique qui regroupe TOUTES les annonces,
+  // triables par catégorie (communiqués, décès, mariages, lancements de projet…).
+  const matchesCategory = (art: Article) => activeCategory === 'all' || (art.category || 'communique') === activeCategory;
 
   // Filter global articles & apps if search query is active
-  const filteredArticles = globalArticles.filter(art => 
-    art.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    art.content.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    art.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredArticles = globalArticles.filter(art =>
+    matchesCategory(art) && (
+      art.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      art.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      art.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+    )
   );
 
   const filteredApps = globalApplications.filter(app => 
@@ -62,6 +87,7 @@ export default function HubView({ departments, globalArticles, globalApplication
 
   // Get exactly the 3 most recent articles across all departments for 'À la une'
   const alaUneArticles = [...articles]
+    .filter(matchesCategory)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 3);
 
@@ -222,13 +248,14 @@ export default function HubView({ departments, globalArticles, globalApplication
       {/* Rest of the homepage container */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-12">
 
-        {/* 1.5 Quick access to institutional tools (GED, Agenda, Annuaire, Organigramme) */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 1.5 Quick access to institutional tools (GED, Agenda, Annuaire, Organigrammes) */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {[
             { key: 'ged' as const, icon: 'Folder', title: 'Bibliothèque de Documents', desc: 'Notes de service, directives, modèles et formulaires téléchargeables.' },
             { key: 'agenda' as const, icon: 'Calendar', title: 'Agenda Institutionnel', desc: 'Réunions, revues techniques et événements planifiés d\'EDG.' },
             { key: 'annuaire' as const, icon: 'Phone', title: 'Annuaire du Personnel', desc: 'Retrouvez les coordonnées directes de vos collègues et directions.' },
-            { key: 'organigramme' as const, icon: 'Network', title: 'Organigramme', desc: 'La hiérarchie des postes et fonctions de l\'EDG.' }
+            { key: 'organigramme' as const, icon: 'Network', title: 'Organigramme des postes', desc: 'La hiérarchie des fonctions et des personnes qui les occupent.' },
+            { key: 'structure' as const, icon: 'Workflow', title: 'Organigrammes des directions', desc: 'Organigramme général et circuits de validation : la hiérarchie selon le contexte.' }
           ].map((tool) => (
             <button
               key={tool.key}
@@ -269,7 +296,8 @@ export default function HubView({ departments, globalArticles, globalApplication
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {departments.map((dept, index) => {
-              const theme = getDeptColorTheme(dept.code);
+              // Vert EDG par défaut, accent rouge EDG au survol (voir DIRECTION_CARD_THEME).
+              const theme = DIRECTION_CARD_THEME;
               return (
                 <motion.div
                   key={dept.id}
@@ -280,7 +308,7 @@ export default function HubView({ departments, globalArticles, globalApplication
                   }}
                   whileTap={{ scale: 0.98 }}
                   transition={{ duration: 0.2 }}
-                  className={`group cursor-pointer border rounded-xl overflow-hidden flex flex-col justify-between shadow-sm transition-all ${theme.cardBg} ${theme.cardBgDark} ${theme.cardGlow}`}
+                  className={`group cursor-pointer border rounded-2xl overflow-hidden flex flex-col justify-between shadow-sm transition-all ${theme.cardBg} ${theme.cardBgDark} ${theme.cardGlow}`}
                 >
                   <div className="p-6">
                     {/* Header Icon Block */}
@@ -294,10 +322,10 @@ export default function HubView({ departments, globalArticles, globalApplication
                     </div>
 
                     {/* Info block */}
-                    <h3 className={`font-display font-black text-lg text-slate-900 dark:text-white transition-colors duration-300 ${theme.textHover} uppercase tracking-tight`}>
+                    <h3 className={`font-display font-black text-base text-slate-900 dark:text-white transition-colors duration-300 ${theme.textHover} uppercase tracking-tight`}>
                       {dept.name}
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-404 mt-2 line-clamp-3 leading-relaxed font-sans font-medium transition-all duration-300 group-hover:text-slate-700 dark:group-hover:text-slate-305">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-404 mt-1.5 line-clamp-3 leading-relaxed font-sans font-medium transition-all duration-300 group-hover:text-slate-700 dark:group-hover:text-slate-305">
                       {dept.description}
                     </p>
                   </div>
@@ -307,7 +335,7 @@ export default function HubView({ departments, globalArticles, globalApplication
                     <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-black">
                       👥 {dept.staffCount} collaborateurs
                     </span>
-                    <span className={`text-xs font-black uppercase flex items-center space-x-1.5 transition-colors ${theme.actionText}`}>
+                    <span className={`text-[11px] font-black uppercase flex items-center space-x-1.5 transition-colors ${theme.actionText}`}>
                       <span>Rejoindre</span>
                       <ArrowRight size={14} className="transform group-hover:translate-x-2 transition-transform duration-300" />
                     </span>
@@ -359,26 +387,57 @@ export default function HubView({ departments, globalArticles, globalApplication
           </section>
         )}
 
-        {/* 3. Global News Actualities Stream & General Apps split view */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Left Col - Actualités Globales */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="border-b border-zinc-200 dark:border-zinc-800 pb-4">
-              <h2 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-white uppercase font-sans">
-                {searchQuery ? `Résultats de recherche actualités (${filteredArticles.length})` : 'Espace Actualités • Électricité de Guinée S.A.'}
-              </h2>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                {searchQuery ? 'Filtre appliqué d\'après votre saisie' : 'Bilans officiels de la Direction Générale de l’EDG S.A., communiqués de presse et informations internes.'}
-              </p>
-            </div>
+        {/* 3. Actualités + Portail applicatif — grille unifiée à 3 colonnes de même hauteur */}
+        <section id="actualites-section" className="space-y-6 scroll-mt-24">
+          <div className="border-b border-zinc-200 dark:border-zinc-800 pb-4">
+            <h2 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-white uppercase font-sans">
+              {searchQuery ? `Résultats de recherche actualités (${filteredArticles.length})` : 'Espace Actualités • Électricité de Guinée S.A.'}
+            </h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              {searchQuery ? 'Filtre appliqué d\'après votre saisie' : 'Toutes les annonces d’EDG S.A. regroupées ici : communiqués, vie de l’entreprise, projets… triables par catégorie.'}
+            </p>
+          </div>
 
+          {/* Filtre par catégorie — regroupe et trie toutes les annonces au même endroit */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => { setActiveCategory('all'); setActiveSlideIndex(0); }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all cursor-pointer ${activeCategory === 'all' ? 'bg-[#048343] text-white border-transparent shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-white/5 dark:text-slate-300 dark:border-white/10'}`}
+            >
+              Tout <span className="opacity-70 tabular-nums">{articles.length}</span>
+            </button>
+            {ARTICLE_CATEGORIES.map((cat) => {
+              const count = articles.filter((a) => (a.category || 'communique') === cat.id).length;
+              if (count === 0) return null;
+              const active = activeCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => { setActiveCategory(cat.id); setActiveSlideIndex(0); }}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all cursor-pointer ${active ? `${cat.badgeClass} font-bold shadow-sm` : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-white/5 dark:text-slate-300 dark:border-white/10'}`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${cat.dotClass}`}></span>
+                  {cat.short} <span className="opacity-70 tabular-nums">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {alaUneArticles.length === 0 && filteredArticles.length === 0 && (
+            <div className="p-10 text-center text-sm text-zinc-400 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">
+              Aucune annonce dans cette catégorie pour l’instant.
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
+
+            {/* Ligne 1 — Focus À la une (occupe 2 colonnes) */}
             {alaUneArticles.length > 0 && (() => {
               const activeSlide = alaUneArticles[activeSlideIndex] || alaUneArticles[0];
               const wordsCount = activeSlide.content.split(' ').length;
               const readTime = Math.max(1, Math.ceil(wordsCount / 140));
               return (
-                <div className="bg-zinc-950 rounded-xl border border-zinc-800 shadow-xl overflow-hidden relative group/carousel mb-8">
+                <div className="sm:col-span-2 lg:col-span-2 bg-zinc-950 rounded-xl border border-zinc-800 shadow-xl overflow-hidden relative group/carousel">
                   {/* Active image back with slow animation */}
                   <div className="relative h-64 sm:h-80 w-full overflow-hidden">
                     <AnimatePresence mode="wait">
@@ -438,6 +497,12 @@ export default function HubView({ departments, globalArticles, globalApplication
                           className="space-y-2.5"
                         >
                           <div className="flex flex-wrap items-center gap-3 text-[10px] text-slate-300 font-mono">
+                            {(() => { const cat = getArticleCategory(activeSlide.category); return (
+                              <span className="inline-flex items-center gap-1.5 bg-black/50 border border-white/20 text-white font-extrabold px-2 py-0.5 rounded text-[8.5px] uppercase tracking-wider">
+                                <LucideIcon name={cat.icon} size={10} />
+                                {cat.short}
+                              </span>
+                            ); })()}
                             <span className="bg-emerald-400 text-slate-950 font-extrabold px-2 py-0.5 rounded text-[8.5px] uppercase tracking-wider">
                               À LA UNE CORPORATE
                             </span>
@@ -526,29 +591,87 @@ export default function HubView({ departments, globalArticles, globalApplication
               );
             })()}
 
+            {/* Ligne 1 — Portail applicatif (1 colonne, même hauteur que le focus) */}
+            <div id="applications-section" className="lg:col-span-1 scroll-mt-24 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-slate-900/40 backdrop-blur-xl shadow-sm p-5 flex flex-col min-h-0">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <span className="p-2 rounded-lg bg-[#048343]/10 text-[#048343] dark:bg-emerald-500/10 dark:text-emerald-400 shrink-0">
+                    <LucideIcon name="LayoutGrid" size={16} />
+                  </span>
+                  <h3 className="text-sm font-black uppercase tracking-tight text-zinc-900 dark:text-white font-sans">Portail applicatif</h3>
+                </div>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-2 leading-relaxed">Accédez aux outils métiers et espaces de travail de l'EDG.</p>
+              </div>
+
+              {filteredApps.length > 0 && (
+                <div className="mt-3 space-y-2 overflow-y-auto flex-1 min-h-0">
+                  {filteredApps.map((app) => (
+                    <a
+                      key={app.id}
+                      href={app.url.startsWith('#') ? undefined : app.url}
+                      onClick={(e) => {
+                        if (app.url.startsWith('#')) {
+                          e.preventDefault();
+                          const targetHash = app.url.replace('#', '');
+                          const [dept, sub] = targetHash.split('/');
+                          onNavigate(sub || 'home', dept);
+                        }
+                      }}
+                      target={app.url.startsWith('#') ? undefined : '_blank'}
+                      rel="noreferrer"
+                      className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg border border-slate-200/60 dark:border-slate-800/60 hover:border-emerald-400/50 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 transition-colors group"
+                    >
+                      <span className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-md text-slate-700 dark:text-slate-300 group-hover:bg-emerald-500 group-hover:text-white transition-colors shrink-0">
+                        <LucideIcon name={app.icon} size={14} />
+                      </span>
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{app.name}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {/* Bouton poussé en bas de la carte (mt-auto) pour éviter le vide */}
+              {siteSettings?.app_hub_url ? (
+                <a
+                  href={siteSettings.app_hub_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-auto inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#048343] hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider shadow-md transition-all cursor-pointer shrink-0"
+                >
+                  <ExternalLink size={14} />
+                  <span>Accéder au portail</span>
+                </a>
+              ) : filteredApps.length === 0 ? (
+                <p className="mt-auto text-[11px] text-zinc-400 dark:text-zinc-500 italic">Aucun outil configuré pour le moment.</p>
+              ) : null}
+            </div>
+
+            {/* Lignes suivantes — Communiqués (3 par ligne, cartes de même taille) */}
             {filteredArticles.length === 0 ? (
-              <div className="bg-slate-50/50 dark:bg-slate-900/10 rounded-2xl p-8 border border-dashed border-slate-300 dark:border-slate-800 text-center text-slate-500 space-y-3">
+              <div className="sm:col-span-2 lg:col-span-3 bg-slate-50/50 dark:bg-slate-900/10 rounded-2xl p-8 border border-dashed border-slate-300 dark:border-slate-800 text-center text-slate-500 space-y-3">
                 <HelpCircle size={32} className="mx-auto" />
                 <p className="text-sm font-semibold dark:text-slate-300">Aucune actualité officielle ne correspond à cette recherche.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <>
                 {filteredArticles.map((article) => {
                   const wordsCount = article.content.split(' ').length;
                   const readTime = Math.max(1, Math.ceil(wordsCount / 140));
+                  const cat = getArticleCategory(article.category);
                   return (
                     <div
                       key={article.id}
                       onClick={() => setSelectedArticle(article)}
-                      className="group bg-white dark:bg-[#09090b] rounded-lg border border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700 transition-all duration-200 cursor-pointer flex flex-col justify-between overflow-hidden shadow-sm"
+                      className="group bg-white dark:bg-[#09090b] rounded-lg border border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700 transition-all duration-200 cursor-pointer flex flex-col justify-between overflow-hidden shadow-sm h-full"
                     >
                       <div className="h-44 w-full shrink-0 relative overflow-hidden bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-900">
                         <div 
                           className="absolute inset-0 transform-gpu transition-transform duration-[1500ms] group-hover:scale-105 opacity-90"
                           style={getArticleBgStyle(article.image)}
                         />
-                        <div className="absolute top-3 left-3 bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase z-10 leading-none">
-                          COMMUNIQUÉ
+                        <div className={`absolute top-3 left-3 inline-flex items-center gap-1 px-2 py-1 rounded text-[8.5px] font-bold uppercase tracking-wide z-10 leading-none shadow-sm border ${cat.badgeClass}`}>
+                          <LucideIcon name={cat.icon} size={9} />
+                          {cat.short}
                         </div>
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-zinc-950/70 to-transparent h-16 z-0"></div>
                         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between z-10 text-[8px] font-mono text-zinc-300 font-bold uppercase tracking-wider">
@@ -595,71 +718,10 @@ export default function HubView({ departments, globalArticles, globalApplication
                     </div>
                   );
                 })}
-              </div>
+              </>
             )}
           </div>
-
-          {/* Right Col - Applications Globales Catalog */}
-          <div id="applications-section" className="space-y-6 scroll-mt-24">
-            <div className="border-b border-zinc-200 dark:border-zinc-800 pb-4">
-              <h2 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-white uppercase font-sans">
-                Applications Générales
-              </h2>
-              <p className="text-xs text-zinc-555 dark:text-zinc-400 mt-1">
-                Ressources et espaces de travail globaux pour tous les agents.
-              </p>
-            </div>
-
-            {filteredApps.length === 0 ? (
-              <div className="bg-zinc-100 rounded-lg p-6 border border-dashed border-zinc-250 text-center text-zinc-550 dark:bg-zinc-900/40 dark:border-zinc-800">
-                <p className="text-xs font-semibold">Aucune application générale trouvée.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredApps.map((app) => (
-                  <a
-                    key={app.id}
-                    href={app.url.startsWith('#') ? undefined : app.url}
-                    onClick={(e) => {
-                      if (app.url.startsWith('#')) {
-                        e.preventDefault();
-                        const targetHash = app.url.replace('#', '');
-                        const [dept, sub] = targetHash.split('/');
-                        onNavigate(sub || 'home', dept);
-                      }
-                    }}
-                    target={app.url.startsWith('#') ? undefined : '_blank'}
-                    rel="noreferrer"
-                    className="block bg-white/45 backdrop-blur-xl saturate-[165%] rounded-2xl border border-slate-200/50 hover:border-emerald-400/50 p-4 transition-all hover:-translate-y-1 hover:shadow-xl group dark:bg-slate-900/40 dark:border-slate-800/60 dark:hover:border-emerald-400/50 shadow-sm"
-                  >
-                    <div className="flex items-start space-x-3.5">
-                      <div className="p-2.5 bg-slate-100 rounded-lg text-slate-900 group-hover:bg-emerald-500 group-hover:text-white transition-colors dark:bg-slate-800 dark:text-slate-300">
-                        <LucideIcon name={app.icon} size={18} />
-                      </div>
-                      <div className="flex-grow min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-450 block truncate">
-                            {app.name}
-                          </span>
-                          {!app.url.startsWith('#') ? (
-                            <ExternalLink size={12} className="text-slate-400 group-hover:text-emerald-500" />
-                          ) : (
-                            <span className="text-[9px] font-mono text-emerald-500 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-semibold uppercase shrink-0 dark:bg-emerald-950/20 dark:border-emerald-900/30">
-                              EDG
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-slate-555 dark:text-slate-400 line-clamp-3 mt-1 leading-relaxed text-left">
-                          {app.description}
-                        </p>
-                      </div>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        </section>
 
       </div>
 

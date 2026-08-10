@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Department, IntranetUser, Application, Article } from '../types';
 import EdgLogo from './EdgLogo';
 import { 
-  Menu, X, ChevronDown, Home, ExternalLink, LogOut, Shield, User, 
+  Menu, X, ChevronDown, Home, ExternalLink, LogOut, LogIn, Shield, User,
   Search, FileText, Calendar, Building, Layers, Sparkles, Key, AlertCircle, ArrowRight, HelpCircle,
   Sun, Moon
 } from 'lucide-react';
@@ -32,9 +32,11 @@ interface HeaderProps {
   onLogout?: () => void;
   applications?: Application[];
   articles?: Article[];
+  /** Décale l'en-tête vers la droite (lg:left-56) pour laisser la place à la sidebar pleine hauteur des espaces direction. */
+  insetLeft?: boolean;
 }
 
-export default function Header({ 
+export default function Header({
   departments, 
   currentDept, 
   currentView, 
@@ -43,17 +45,19 @@ export default function Header({
   currentUser,
   onLogout,
   applications = [],
-  articles = []
+  articles = [],
+  insetLeft = false
 }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [deptDropdownOpen, setDeptDropdownOpen] = useState(false);
-  const [equipeDropdownOpen, setEquipeDropdownOpen] = useState(false);
+  const [appDropdownOpen, setAppDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   // Fermeture robuste des menus déroulants au clic à l'extérieur (remplace l'ancien
   // onBlur+setTimeout, sujet à une course : un clic lent sur un item du menu pouvait
   // se faire fermer avant que son onClick ne s'exécute, empêchant la navigation).
   const deptDropdownRef = useRef<HTMLDivElement>(null);
+  const appDropdownRef = useRef<HTMLDivElement>(null);
   const userDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,6 +65,9 @@ export default function Header({
       const target = e.target as Node;
       if (deptDropdownRef.current && !deptDropdownRef.current.contains(target)) {
         setDeptDropdownOpen(false);
+      }
+      if (appDropdownRef.current && !appDropdownRef.current.contains(target)) {
+        setAppDropdownOpen(false);
       }
       if (userDropdownRef.current && !userDropdownRef.current.contains(target)) {
         setUserDropdownOpen(false);
@@ -77,6 +84,27 @@ export default function Header({
       return (parts[0][0] + parts[1][0]).toUpperCase();
     }
     return parts[0].substring(0, 2).toUpperCase();
+  };
+
+  const getAppLogoUrl = (app: Application) => {
+    if (app.logoUrl && (app.logoUrl.startsWith('http://') || app.logoUrl.startsWith('https://') || app.logoUrl.startsWith('/'))) {
+      return app.logoUrl;
+    }
+
+    if (app.icon && (app.icon.startsWith('http://') || app.icon.startsWith('https://'))) {
+      return app.icon;
+    }
+
+    if (!app.url) {
+      return null;
+    }
+
+    try {
+      const url = new URL(app.url);
+      return `https://www.google.com/s2/favicons?sz=128&domain=${encodeURIComponent(url.hostname)}`;
+    } catch {
+      return null;
+    }
   };
 
   // Dark mode theme state with localStorage persistence
@@ -175,15 +203,15 @@ export default function Header({
   const totalMatches = matchedDepts.length + matchedApps.length + matchedArticles.length;
 
   return (
-    <header id="edg-header" className="fixed top-0 left-0 right-0 z-50 bg-white/75 dark:bg-zinc-950/70 backdrop-blur-md border-b border-zinc-200/50 dark:border-zinc-900/40 text-zinc-800 dark:text-zinc-100 shadow-md transition-all duration-200">
+    <header id="edg-header" className={`fixed top-0 right-0 z-50 ${insetLeft ? 'left-0 lg:left-56' : 'left-0'} bg-white/75 dark:bg-zinc-950/70 backdrop-blur-md border-b border-zinc-200/50 dark:border-zinc-900/40 text-zinc-800 dark:text-zinc-100 shadow-md transition-all duration-200`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           
           {/* Logo & Platform Name */}
-          <div 
-            onClick={() => onNavigate('hub')} 
+          <div
+            onClick={() => onNavigate('hub')}
             onDoubleClick={() => onNavigate('login')}
-            className="flex items-center space-x-3 cursor-pointer group shrink-0"
+            className={`flex items-center space-x-3 cursor-pointer group shrink-0 ${insetLeft ? 'lg:hidden' : ''}`}
             id="logo-container"
             title="Double-cliquer pour l'accès sécurisé"
           >
@@ -233,7 +261,7 @@ export default function Header({
                 onBlur={() => setTimeout(() => setIsFocused(false), 240)}
                 onKeyDown={handleInputKeyDown}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-10 py-1.5 bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800 focus:bg-white dark:focus:bg-zinc-950 focus:border-zinc-400 dark:focus:border-zinc-650 rounded text-xs text-zinc-800 dark:text-zinc-150 placeholder-zinc-450 dark:placeholder-zinc-550 focus:outline-none transition-all font-sans"
+                className="w-full pl-9 pr-10 py-1.5 bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800 focus:bg-white dark:focus:bg-zinc-950 focus:border-zinc-400 dark:focus:border-zinc-650 rounded-xl text-xs text-zinc-800 dark:text-zinc-150 placeholder-zinc-450 dark:placeholder-zinc-550 focus:outline-none transition-all font-sans"
               />
               <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center space-x-1">
                 {searchQuery && (
@@ -296,8 +324,8 @@ export default function Header({
                                   <LucideIcon name={dept.icon} size={12} />
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                                    <span>{dept.name}</span>
+                                  <p className="text-xs font-bold text-slate-800 flex items-center space-x-1.5 overflow-hidden">
+                                    <span className="truncate whitespace-nowrap">{dept.name}</span>
                                     <span className="bg-slate-200 text-slate-700 font-mono text-[8px] font-semibold px-1 py-0.2 rounded uppercase">
                                       {dept.code}
                                     </span>
@@ -322,12 +350,7 @@ export default function Header({
                                 key={app.id}
                                 id={`search-result-app-${app.id}`}
                                 onClick={() => {
-                                  const targetDept = departments.find(d => d.id === app.departmentId);
-                                  if (targetDept) {
-                                    onNavigate('portal', targetDept.code);
-                                  } else {
-                                    onNavigate('portal', currentDept?.code || 'dsi');
-                                  }
+                                  onNavigate('portal');
                                   setSimulatedSearchApp(app);
                                   setIsFocused(false);
                                   setSearchQuery('');
@@ -426,22 +449,17 @@ export default function Header({
                 }`}
               >
                 <span>Directions</span>
-                {currentDept && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-md font-mono font-black uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400">
-                    {currentDept.code.toUpperCase()}
-                  </span>
-                )}
                 <ChevronDown size={14} className={`transform transition-transform text-slate-400 ${deptDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {deptDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-[720px] max-w-[92vw] max-h-[75vh] overflow-y-auto rounded-2xl bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl border border-zinc-200/50 dark:border-zinc-800/80 shadow-2xl py-1 z-50 animate-fade-in scrollbar-thin">
+                <div className="absolute right-0 mt-2 w-[360px] max-w-[92vw] max-h-[75vh] overflow-y-auto rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl py-1 z-50 animate-fade-in scrollbar-thin">
                   <div className="px-4.5 py-3 bg-zinc-50/50 dark:bg-zinc-900/50 border-b border-zinc-200/50 dark:border-zinc-800/50">
-                    <span className="text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-wider block">
+                    <span className="text-slate-500 dark:text-slate-400 text-sm font-black uppercase tracking-wider block">
                       Espaces Particuliers (Directions)
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2.5 p-3.5">
+                  <div className="grid grid-cols-1 gap-3 p-3.5">
                     {departments.map((dept) => (
                       <button
                         key={dept.id}
@@ -449,17 +467,87 @@ export default function Header({
                           onNavigate('home', dept.code);
                           setDeptDropdownOpen(false);
                         }}
-                        className="flex items-start space-x-2.5 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850 text-left transition-all border border-transparent hover:border-slate-100 dark:hover:border-slate-800 group"
+                        className="flex items-center space-x-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-850 text-left transition-all border border-transparent hover:border-slate-100 dark:hover:border-slate-800 group"
                       >
-                        <div className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
-                          <LucideIcon name={dept.icon} size={13} />
+                        <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-emerald-600 dark:text-emerald-400 shrink-0 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                          <LucideIcon name={dept.icon} size={16} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-extrabold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors uppercase tracking-tight whitespace-normal">{dept.name}</p>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500 line-clamp-2 mt-0.5">{dept.description}</p>
+                          <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors capitalize tracking-tight whitespace-nowrap truncate">{dept.name}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1">{dept.description}</p>
                         </div>
                       </button>
                     ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Portail applicatif Dropdown */}
+            <div className="relative" ref={appDropdownRef}>
+              <button
+                onClick={() => setAppDropdownOpen(!appDropdownOpen)}
+                className={`flex items-center space-x-2 text-sm font-medium transition-colors cursor-pointer ${
+                  appDropdownOpen ? 'text-emerald-700 dark:text-emerald-400 font-bold' : currentView === 'portal' ? 'text-emerald-700 dark:text-emerald-400 font-bold' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span>Portail applicatif</span>
+                <ChevronDown size={14} className={`transform transition-transform text-slate-400 ${appDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {appDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-[360px] max-w-[92vw] max-h-[70vh] overflow-y-auto rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-2xl py-1 z-50 animate-fade-in scrollbar-thin">
+                  <div className="px-4.5 py-3 bg-zinc-50/50 dark:bg-zinc-900/50 border-b border-zinc-200/50 dark:border-zinc-800/50">
+                    <span className="text-slate-500 dark:text-slate-400 text-sm font-black uppercase tracking-wider block">
+                      Applications du Portail
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 p-3.5">
+                    {applications.length > 0 ? (
+                      applications.map((app) => {
+                        const logoSrc = getAppLogoUrl(app);
+                        return (
+                          <a
+                            key={app.id}
+                            href={app.url || '#'}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center justify-between rounded-xl border border-transparent p-3 text-left transition-colors hover:border-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900/80 dark:hover:border-slate-800"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-800">
+                                {logoSrc ? (
+                                  <img src={logoSrc} alt={`${app.name} logo`} className="w-full h-full object-contain" />
+                                ) : (
+                                  <LucideIcon name={app.icon || 'Box'} size={18} className="text-slate-600 dark:text-slate-300" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{app.name}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">{app.category}</p>
+                              </div>
+                            </div>
+                            <ExternalLink size={14} className="text-slate-400 dark:text-slate-500 ml-3" />
+                          </a>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-4 text-sm text-slate-500 dark:text-slate-400 text-center">
+                        Aucune application disponible.
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-3.5 py-3 border-t border-slate-200/70 dark:border-slate-800/70 bg-slate-50 dark:bg-slate-950/70">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate('portal');
+                        setAppDropdownOpen(false);
+                      }}
+                      className="w-full rounded-2xl bg-[#048343] hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-3 transition-all"
+                    >
+                      Aller au portail
+                    </button>
                   </div>
                 </div>
               )}
@@ -544,7 +632,16 @@ export default function Header({
                   </div>
                 )}
               </div>
-            ) : null}
+            ) : (
+              <button
+                onClick={() => onNavigate('login')}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-full bg-[#048343] hover:bg-emerald-700 text-white text-xs font-bold shadow-sm active:scale-95 transition-all cursor-pointer"
+                aria-label="Se connecter"
+              >
+                <LogIn size={14} />
+                <span className="hidden sm:inline">Se connecter</span>
+              </button>
+            )}
           </div>
 
           {/* Mobile menu toggle */}
@@ -638,12 +735,7 @@ export default function Header({
                           <button
                             key={app.id}
                             onClick={() => {
-                              const targetDept = departments.find(d => d.id === app.departmentId);
-                              if (targetDept) {
-                                onNavigate('portal', targetDept.code);
-                              } else {
-                                onNavigate('portal', currentDept?.code || 'dsi');
-                              }
+                              onNavigate('portal');
                               setSimulatedSearchApp(app);
                               setSearchQuery('');
                               setMobileMenuOpen(false);
@@ -746,6 +838,19 @@ export default function Header({
             </div>
           )}
 
+          {!currentUser && (
+            <button
+              onClick={() => {
+                onNavigate('login');
+                setMobileMenuOpen(false);
+              }}
+              className="w-full mb-2 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-xl bg-[#048343] hover:bg-emerald-700 text-white text-sm font-bold cursor-pointer"
+            >
+              <LogIn size={16} />
+              <span>Se connecter</span>
+            </button>
+          )}
+
           <div className="space-y-1">
             <button
               onClick={() => {
@@ -775,7 +880,7 @@ export default function Header({
             <span className="px-3 pb-2 block text-[10px] font-mono tracking-wider uppercase text-slate-400 dark:text-slate-500">
               Directions / Départements
             </span>
-            <div className="grid grid-cols-2 gap-2 mt-1">
+            <div className="grid grid-cols-1 gap-2 mt-1">
               {departments.map((dept) => (
                 <button
                   key={dept.id}
@@ -793,7 +898,7 @@ export default function Header({
                     <LucideIcon name={dept.icon} size={16} />
                   </div>
                   <span className="text-xs font-semibold">{dept.code.toUpperCase()}</span>
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">{dept.name}</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 truncate whitespace-nowrap capitalize">{dept.name}</span>
                 </button>
               ))}
             </div>
@@ -827,7 +932,7 @@ export default function Header({
                 </button>
                 
                 <div className="flex items-center space-x-2 mb-3">
-                  <span className="text-[10px] font-extrabold bg-emerald-400 text-slate-900 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                  <span className="text-[10px] font-extrabold bg-emerald-400 text-slate-900 dark:text-slate-900 px-2 py-0.5 rounded-full uppercase tracking-wider">
                     {selectedSearchArticle.isGlobal ? 'Actualité Générale' : 'Actualité Métier'}
                   </span>
                   <span className="text-xs font-mono text-white/80">

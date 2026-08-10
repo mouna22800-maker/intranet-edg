@@ -19,9 +19,12 @@ interface GedDoc {
 
 interface DocumentsViewProps {
   onNavigateBack?: () => void;
+  /** Si fourni, n'affiche que les documents de cette direction (bibliothèque intégrée à un espace direction). */
+  departmentId?: number;
+  departmentName?: string;
 }
 
-export default function DocumentsView({ onNavigateBack }: DocumentsViewProps) {
+export default function DocumentsView({ onNavigateBack, departmentId, departmentName }: DocumentsViewProps) {
   const [gedDocs, setGedDocs] = useState<GedDoc[]>([]);
   const [gedFilterCategory, setGedFilterCategory] = useState('Tous');
   const [gedSearchQuery, setGedSearchQuery] = useState('');
@@ -35,7 +38,9 @@ export default function DocumentsView({ onNavigateBack }: DocumentsViewProps) {
 
   useEffect(() => {
     setGedLoading(true);
-    fetch('/api/documents')
+    // En contexte direction, on ne charge QUE ses documents (paramètre department_id de l'API).
+    const url = departmentId != null ? `/api/documents?department_id=${departmentId}` : '/api/documents';
+    fetch(url)
       .then(res => res.json())
       .then((data: any[]) => {
         if (Array.isArray(data)) {
@@ -53,7 +58,7 @@ export default function DocumentsView({ onNavigateBack }: DocumentsViewProps) {
         setGedLoading(false);
       })
       .catch(() => setGedLoading(false));
-  }, []);
+  }, [departmentId]);
 
   const filteredGedDocs = gedDocs.filter(doc => {
     const matchesCategory = gedFilterCategory === 'Tous' || doc.category === gedFilterCategory;
@@ -78,10 +83,12 @@ export default function DocumentsView({ onNavigateBack }: DocumentsViewProps) {
         </div>
         <div>
           <h2 className="font-display text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Bibliothèque de Documents (G.E.D.)
+            {departmentId != null ? 'Bibliothèque de la direction' : 'Bibliothèque de Documents (G.E.D.)'}
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Notes de service, directives, modèles officiels et formulaires téléchargeables de l'Électricité de Guinée.
+            {departmentId != null
+              ? `Notes de service, directives, modèles et formulaires propres à ${departmentName || 'cette direction'}.`
+              : "Notes de service, directives, modèles officiels et formulaires téléchargeables de l'Électricité de Guinée."}
           </p>
         </div>
       </div>

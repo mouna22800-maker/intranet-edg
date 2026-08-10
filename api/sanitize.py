@@ -10,6 +10,8 @@ les balises/scripts dangereux, les gestionnaires d'événements (onclick, onerro
 `javascript:` sont supprimés, tout en conservant la mise en forme légitime de l'éditeur.
 """
 from typing import Optional
+import html as _html
+import re as _re
 import nh3
 
 # Balises produites par CKEditor et jugées sûres (mise en forme, listes, liens, tableaux, images).
@@ -48,7 +50,11 @@ def sanitize_html(html: Optional[str]) -> str:
 
 
 def sanitize_plain(text: Optional[str]) -> str:
-    """Retire TOUT balisage HTML (pour les champs censés être du texte simple : chapeau, titres)."""
+    """Texte simple prêt à l'affichage (chapeau des actualités, etc.) : retire TOUT balisage HTML,
+    décode les entités (&nbsp;, &amp;…) et normalise les espaces, pour ne jamais afficher de
+    `<strong>` ou de `&nbsp;` en clair dans un champ rendu en texte brut."""
     if not text:
         return ""
-    return nh3.clean(text, tags=set(), attributes={})
+    stripped = nh3.clean(text, tags=set(), attributes={})
+    decoded = _html.unescape(stripped).replace(" ", " ")
+    return _re.sub(r"\s+", " ", decoded).strip()

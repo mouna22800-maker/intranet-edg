@@ -122,9 +122,10 @@ export default function MissionView({ department }: MissionViewProps) {
                 <Quote size={32} className="stroke-[1.5]" />
               </div>
               
-              <p className="text-sm dark:text-slate-200 leading-relaxed font-serif italic text-slate-700">
-                "{department.directorMessage || "Notre mission prioritaire est de construire un réseau moderne et connecté, fondé sur la rigueur, l'équité de traitement et un dévouement inébranlable pour la République de Guinée."}"
-              </p>
+              <div
+                className="rich-content text-sm dark:text-slate-200 leading-relaxed font-serif italic text-slate-700"
+                dangerouslySetInnerHTML={{ __html: department.directorMessage ? `"${department.directorMessage}"` : `"Notre mission prioritaire est de construire un réseau moderne et connecté, fondé sur la rigueur, l'équité de traitement et un dévouement inébranlable pour la République de Guinée."` }}
+              />
 
               <div className="pt-4 border-t border-slate-200/50 dark:border-white/5 flex items-center justify-between">
                 <div>

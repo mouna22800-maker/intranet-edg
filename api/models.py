@@ -43,6 +43,67 @@ class PosteResponse(PosteBase):
         from_attributes = True
 
 
+# --- Organigrammes dynamiques : entités (unity), workflows (contextes), nœuds contextuels ---
+
+class UnitEntity(BaseModel):
+    """Entité de l'organisation (ligne unity), réutilisable dans tous les workflows."""
+    id: int
+    code: str
+    name: str
+    type: Optional[str] = "Direction"
+
+    class Config:
+        from_attributes = True
+
+
+class UnitEntityCreate(BaseModel):
+    name: str = Field(..., description="Libellé de l'entité (ex: Direction des Ressources Humaines)")
+    code: Optional[str] = Field(None, description="Code court unique (généré depuis le nom si vide)")
+    type: Optional[str] = Field("Département", description="Direction / Département / Service…")
+
+
+class WorkflowBase(BaseModel):
+    label: str = Field(..., description="Nom du contexte / de l'organigramme (ex: Validation Application)")
+    description: Optional[str] = Field("", description="Description libre du contexte")
+
+
+class WorkflowCreate(WorkflowBase):
+    pass
+
+
+class WorkflowResponse(WorkflowBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class NodeCreate(BaseModel):
+    """Associe une entité (unitId) à un workflow, avec SON parent DANS ce workflow."""
+    unitId: int = Field(..., description="Entité placée dans le workflow")
+    parentUnitId: Optional[int] = Field(None, description="Parent DANS ce workflow (NULL = racine)")
+    ordre: Optional[int] = Field(0, description="Ordre d'affichage entre entités sœurs")
+
+
+class NodeUpdate(BaseModel):
+    parentUnitId: Optional[int] = Field(None, description="Nouveau parent DANS ce workflow (NULL = racine)")
+    ordre: Optional[int] = Field(0, description="Ordre d'affichage")
+
+
+class NodeResponse(BaseModel):
+    id: int
+    workflowId: int
+    unitId: int
+    parentUnitId: Optional[int] = None
+    ordre: int = 0
+    name: str = ""
+    code: str = ""
+    type: str = "Direction"
+
+    class Config:
+        from_attributes = True
+
+
 class DocumentBase(BaseModel):
     title: str = Field(..., description="Titre du document")
     category: str = Field(..., description="Note de service / Directive / Modèle officiel / Formulaire")
@@ -132,6 +193,7 @@ class ArticleBase(BaseModel):
     title: str = Field(..., description="Titre d'actualité")
     excerpt: str = Field(..., description="Chapeau synthétique")
     content: str = Field(..., description="Corps textuel complet")
+    category: str = Field(default="communique", description="Catégorie d'annonce (communique, deces, mariage, naissance, retraite, recrue, projet, evenement)")
     tags: List[str] = Field(default=[], description="Mots-clés associés")
     isGlobal: bool = Field(default=False, description="Visibilité globale")
     departmentId: Optional[int] = Field(None, description="ID de la direction si local")

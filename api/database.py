@@ -247,6 +247,7 @@ def init_db():
             id INT AUTO_INCREMENT PRIMARY KEY,
             label VARCHAR(255) NOT NULL,
             code VARCHAR(100) NOT NULL UNIQUE,       -- ex: 'dsi', 'rh'
+            type VARCHAR(64) NOT NULL DEFAULT 'Direction',  -- Direction / Département / Service…
             description TEXT,                       -- Chapeau descriptif
             icon VARCHAR(100) DEFAULT 'Layers',
             director_name VARCHAR(255) NOT NULL,    -- Nom du directeur
@@ -272,6 +273,32 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (unity_id) REFERENCES unity(id) ON DELETE SET NULL,
             FOREIGN KEY (parent_id) REFERENCES poste(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """)
+
+        # 4c. workflow : contextes d'organigramme (ex: "Organigramme Général", "Validation Application").
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workflow (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            label VARCHAR(255) NOT NULL,           -- nom du contexte / de l'organigramme
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """)
+
+        # 4d. organigramme_node : place une entité (unity) dans un workflow, avec SON parent DANS ce workflow.
+        #     La même entité peut avoir un parent DIFFÉRENT selon le workflow (hiérarchie contextuelle).
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS organigramme_node (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            workflow_id INT NOT NULL,
+            unit_id INT NOT NULL,                  -- l'entité placée dans ce workflow
+            parent_unit_id INT,                    -- son parent DANS ce workflow (NULL = racine)
+            ordre INT DEFAULT 0,
+            UNIQUE KEY uq_workflow_unit (workflow_id, unit_id),
+            FOREIGN KEY (workflow_id) REFERENCES workflow(id) ON DELETE CASCADE,
+            FOREIGN KEY (unit_id) REFERENCES unity(id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_unit_id) REFERENCES unity(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
 
@@ -303,6 +330,7 @@ def init_db():
             images TEXT,                            -- Liste d'images ou une seule image
             files TEXT,                             -- Documents joints (JSON [{name, url}])
             type INT NOT NULL,                      -- FK vers type_news
+            category VARCHAR(50) NOT NULL DEFAULT 'communique',  -- Catégorie d'annonce (communique, deces, mariage, naissance...)
             created_at VARCHAR(100) NOT NULL,       -- ISO String format
             FOREIGN KEY (unity_id) REFERENCES unity(id) ON DELETE CASCADE,
             FOREIGN KEY (type) REFERENCES type_news(id) ON DELETE CASCADE
@@ -365,6 +393,7 @@ def init_db():
             description TEXT NOT NULL,
             url VARCHAR(512) NOT NULL,
             icon VARCHAR(100) DEFAULT 'ExternalLink',
+            logo_url VARCHAR(512) NULL,
             is_global TINYINT(1) DEFAULT 0,
             category VARCHAR(100) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -547,6 +576,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             label TEXT NOT NULL,
             code TEXT NOT NULL UNIQUE,       -- ex: 'dsi', 'rh'
+            type TEXT NOT NULL DEFAULT 'Direction',  -- Direction / Département / Service…
             description TEXT,               -- Chapeau descriptif
             icon TEXT DEFAULT 'Layers',
             director_name TEXT NOT NULL,    -- Nom du directeur
@@ -572,6 +602,31 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (unity_id) REFERENCES unity(id) ON DELETE SET NULL,
             FOREIGN KEY (parent_id) REFERENCES poste(id) ON DELETE SET NULL
+        );
+        """)
+
+        # 4c. workflow : contextes d'organigramme (ex: "Organigramme Général", "Validation Application").
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workflow (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            label TEXT NOT NULL,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+
+        # 4d. organigramme_node : place une entité (unity) dans un workflow, avec SON parent DANS ce workflow.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS organigramme_node (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_id INTEGER NOT NULL,
+            unit_id INTEGER NOT NULL,
+            parent_unit_id INTEGER,
+            ordre INTEGER DEFAULT 0,
+            UNIQUE (workflow_id, unit_id),
+            FOREIGN KEY (workflow_id) REFERENCES workflow(id) ON DELETE CASCADE,
+            FOREIGN KEY (unit_id) REFERENCES unity(id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_unit_id) REFERENCES unity(id) ON DELETE SET NULL
         );
         """)
 
@@ -603,6 +658,7 @@ def init_db():
             images TEXT,
             files TEXT,
             type INTEGER NOT NULL,
+            category TEXT NOT NULL DEFAULT 'communique',
             created_at TEXT NOT NULL,
             FOREIGN KEY (unity_id) REFERENCES unity(id) ON DELETE CASCADE,
             FOREIGN KEY (type) REFERENCES type_news(id) ON DELETE CASCADE
@@ -665,6 +721,7 @@ def init_db():
             description TEXT NOT NULL,
             url TEXT NOT NULL,
             icon TEXT DEFAULT 'ExternalLink',
+            logo_url TEXT,
             is_global BOOLEAN DEFAULT 0,
             category TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -832,6 +889,25 @@ def init_db():
     except Exception as e:
         print(f"Migration news.excerpt ignoree : {e}")
 
+    # Migration idempotente : ajout de news.category (categorie d'annonce : deces, mariage, naissance...)
+    try:
+        if is_mysql:
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM information_schema.columns
+                WHERE table_schema = DATABASE() AND table_name = 'news' AND column_name = 'category'
+            """)
+            res = cursor.fetchone()
+            has_category = (res["cnt"] if isinstance(res, dict) else res[0]) > 0
+            if not has_category:
+                cursor.execute("ALTER TABLE news ADD COLUMN category VARCHAR(50) NOT NULL DEFAULT 'communique' AFTER type")
+        else:
+            cursor.execute("PRAGMA table_info(news)")
+            cols = [row["name"] if isinstance(row, dict) else row[1] for row in cursor.fetchall()]
+            if "category" not in cols:
+                cursor.execute("ALTER TABLE news ADD COLUMN category TEXT NOT NULL DEFAULT 'communique'")
+    except Exception as e:
+        print(f"Migration news.category ignoree : {e}")
+
     # Migration idempotente : ajout de users.unity_id si la table existait deja sans cette colonne
     try:
         if is_mysql:
@@ -851,6 +927,25 @@ def init_db():
                 cursor.execute("ALTER TABLE users ADD COLUMN unity_id INTEGER")
     except Exception as e:
         print(f"Migration users.unity_id ignoree : {e}")
+
+    # Migration idempotente : ajout de applications.logo_url si la table existait deja sans cette colonne
+    try:
+        if is_mysql:
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM information_schema.columns
+                WHERE table_schema = DATABASE() AND table_name = 'applications' AND column_name = 'logo_url'
+            """)
+            res = cursor.fetchone()
+            has_logo_url = (res["cnt"] if isinstance(res, dict) else res[0]) > 0
+            if not has_logo_url:
+                cursor.execute("ALTER TABLE applications ADD COLUMN logo_url VARCHAR(512) NULL AFTER icon")
+        else:
+            cursor.execute("PRAGMA table_info(applications)")
+            cols = [row["name"] if isinstance(row, dict) else row[1] for row in cursor.fetchall()]
+            if "logo_url" not in cols:
+                cursor.execute("ALTER TABLE applications ADD COLUMN logo_url TEXT")
+    except Exception as e:
+        print(f"Migration applications.logo_url ignoree : {e}")
 
     # Migration idempotente : colonnes de sécurité sur users (blocage, dernière connexion, âge du mot de passe)
     try:
@@ -883,6 +978,28 @@ def init_db():
         cursor.execute("UPDATE users SET password_changed_at = ? WHERE password_changed_at IS NULL", (_now_iso,))
     except Exception as e:
         print(f"Migration users (colonnes securite) ignoree : {e}")
+
+    # Migration idempotente : colonne unity.type (Direction/Département/Service…) et retrait de
+    # l'ancienne table org_structure (remplacée par le modèle workflow / organigramme_node).
+    try:
+        if is_mysql:
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM information_schema.columns
+                WHERE table_schema = DATABASE() AND table_name = 'unity' AND column_name = 'type'
+            """)
+            res = cursor.fetchone()
+            has_type = (res["cnt"] if isinstance(res, dict) else res[0]) > 0
+            if not has_type:
+                cursor.execute("ALTER TABLE unity ADD COLUMN type VARCHAR(64) NOT NULL DEFAULT 'Direction' AFTER code")
+        else:
+            cursor.execute("PRAGMA table_info(unity)")
+            cols = [row["name"] if isinstance(row, dict) else row[1] for row in cursor.fetchall()]
+            if "type" not in cols:
+                cursor.execute("ALTER TABLE unity ADD COLUMN type TEXT NOT NULL DEFAULT 'Direction'")
+        cursor.execute("UPDATE unity SET type = 'Direction' WHERE type IS NULL OR type = ''")
+        cursor.execute("DROP TABLE IF EXISTS org_structure")
+    except Exception as e:
+        print(f"Migration unity.type ignoree : {e}")
 
     # Migration idempotente : rattachement du ticket au compte connecté (notification fiable même si
     # l'email saisi diffère de l'email du compte).
@@ -1478,6 +1595,28 @@ def init_db():
                 (f"Directeur — {u['label']}", u["id"], dg_poste_id, u["director_name"] or "", ordre)
             )
             ordre += 1
+
+    # Seed : un workflow "Organigramme Général" pré-rempli avec la hiérarchie actuelle des entités
+    # (on reprend unity.parent_id comme parent DANS ce workflow). Créé une seule fois.
+    cursor.execute("SELECT COUNT(*) as cnt FROM workflow")
+    res = cursor.fetchone()
+    count = res["cnt"] if (res and isinstance(res, dict)) else (res[0] if res else 0)
+    if count == 0:
+        cursor.execute(
+            "INSERT INTO workflow (label, description) VALUES (?, ?)",
+            ("Organigramme Général", "Hiérarchie institutionnelle par défaut de l'Électricité de Guinée.")
+        )
+        wf_id = cursor.lastrowid
+        cursor.execute("SELECT id, parent_id FROM unity ORDER BY id")
+        ordre_n = 0
+        for u in cursor.fetchall():
+            uid = u["id"] if isinstance(u, dict) else u[0]
+            pid = u["parent_id"] if isinstance(u, dict) else u[1]
+            cursor.execute(
+                "INSERT INTO organigramme_node (workflow_id, unit_id, parent_unit_id, ordre) VALUES (?, ?, ?, ?)",
+                (wf_id, uid, pid, ordre_n)
+            )
+            ordre_n += 1
 
     # Seed Events (agenda institutionnel) - independant du seed des directions
     cursor.execute("SELECT COUNT(*) as cnt FROM events")

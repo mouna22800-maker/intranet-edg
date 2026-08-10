@@ -24,6 +24,7 @@ const DocumentsView = lazy(() => import('./components/DocumentsView'));
 const AgendaView = lazy(() => import('./components/AgendaView'));
 const AnnuaireView = lazy(() => import('./components/AnnuaireView'));
 const OrganigrammeView = lazy(() => import('./components/OrganigrammeView'));
+const WorkflowView = lazy(() => import('./components/WorkflowView'));
 const AdminView = lazy(() => import('./components/AdminView'));
 const MissionView = lazy(() => import('./components/MissionView'));
 const EngagementView = lazy(() => import('./components/EngagementView'));
@@ -36,7 +37,7 @@ import { apiFetch } from './api';
 
 import { Department, Article, Application, IntranetUser } from './types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Building, Zap, Layers, Users, Cpu, ShieldAlert, ArrowLeft, Home, User, Settings, HelpCircle, LogOut, ChevronLeft, Moon, Sun, AlertCircle, Award, Target, ShieldCheck, Sparkles, Newspaper, Briefcase, Mail } from 'lucide-react';
+import { Building, Zap, Layers, Users, Cpu, ShieldAlert, ArrowLeft, Home, User, Settings, HelpCircle, LogOut, Moon, Sun, AlertCircle, Award, Target, ShieldCheck, Sparkles, Newspaper, Briefcase, Mail, FileText } from 'lucide-react';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<string>('hub'); // 'hub', 'home', 'about', 'team', 'portal', 'ticket', 'admin'
@@ -289,6 +290,9 @@ export default function App() {
           formData.append('description', added.description);
           formData.append('url', added.url);
           formData.append('icon', added.icon || 'ExternalLink');
+          if (added.logoUrl !== undefined) {
+            formData.append('logo_url', added.logoUrl);
+          }
           formData.append('isGlobal', String(added.isGlobal));
           formData.append('category', added.category);
           if (added.departmentId) {
@@ -321,6 +325,7 @@ export default function App() {
             old.description !== n.description ||
             old.url !== n.url ||
             old.icon !== n.icon ||
+            old.logoUrl !== n.logoUrl ||
             old.isGlobal !== n.isGlobal ||
             old.category !== n.category ||
             old.departmentId !== n.departmentId
@@ -333,6 +338,7 @@ export default function App() {
           formData.append('description', updated.description);
           formData.append('url', updated.url);
           formData.append('icon', updated.icon || 'ExternalLink');
+          formData.append('logo_url', updated.logoUrl || '');
           formData.append('isGlobal', String(updated.isGlobal));
           formData.append('category', updated.category);
           if (updated.departmentId) {
@@ -364,6 +370,7 @@ export default function App() {
               title: added.title,
               excerpt: added.excerpt,
               content: added.content,
+              category: added.category || 'communique',
               tags: added.tags,
               isGlobal: added.isGlobal,
               departmentId: added.departmentId || null,
@@ -390,6 +397,7 @@ export default function App() {
             old.title !== n.title ||
             old.excerpt !== n.excerpt ||
             old.content !== n.content ||
+            old.category !== n.category ||
             JSON.stringify(old.tags) !== JSON.stringify(n.tags) ||
             old.isGlobal !== n.isGlobal ||
             old.departmentId !== n.departmentId ||
@@ -405,6 +413,7 @@ export default function App() {
               title: updated.title,
               excerpt: updated.excerpt,
               content: updated.content,
+              category: updated.category || 'communique',
               tags: updated.tags,
               isGlobal: updated.isGlobal,
               departmentId: updated.departmentId || null,
@@ -557,7 +566,10 @@ export default function App() {
         if (appsRes.ok) {
           const appsData = await appsRes.json();
           if (appsData && appsData.status === 'success' && Array.isArray(appsData.data)) {
-            setApplications(appsData.data);
+            setApplications(appsData.data.map((app: any) => ({
+              ...app,
+              logoUrl: app.logoUrl || app.logo_url || undefined
+            })));
           }
         }
 
@@ -610,13 +622,19 @@ export default function App() {
         return;
       }
 
+      if (hash === 'portal') {
+        setCurrentView('portal');
+        setCurrentDeptCode(undefined);
+        return;
+      }
+
       if (hash === 'ticket' || hash.startsWith('ticket/')) {
         setCurrentView('ticket');
         setCurrentDeptCode(undefined);
         return;
       }
 
-      if (['documents', 'agenda', 'annuaire', 'organigramme'].includes(hash)) {
+      if (['documents', 'agenda', 'annuaire', 'organigramme', 'structure'].includes(hash)) {
         setCurrentView(hash);
         setCurrentDeptCode(undefined);
         return;
@@ -656,6 +674,11 @@ export default function App() {
 
   // Custom simulation routing function
   const onNavigate = (view: string, deptCode?: string) => {
+    if (view === 'portal') {
+      window.location.hash = '#portal';
+      return;
+    }
+
     if (view === 'hub' || !deptCode) {
       if (view === 'admin') {
         window.location.hash = '#admin';
@@ -663,7 +686,7 @@ export default function App() {
         window.location.hash = '#login';
       } else if (view === 'ticket') {
         window.location.hash = '#ticket';
-      } else if (view === 'documents' || view === 'agenda' || view === 'annuaire' || view === 'organigramme') {
+      } else if (view === 'documents' || view === 'agenda' || view === 'annuaire' || view === 'organigramme' || view === 'structure') {
         window.location.hash = '#' + view;
       } else {
         window.location.hash = '';
@@ -683,12 +706,7 @@ export default function App() {
   const localArticles = articles.filter(art => !art.isGlobal && art.departmentId === activeDept?.id);
 
   const globalApplications = applications.filter(app => app.isGlobal);
-  const localApplications = applications.filter(app => !app.isGlobal && activeDept &&
-    (app.departmentId === activeDept.id ||
-     app.url.includes(activeDept.code) ||
-     // Liaisons applicatives réelles issues du backend
-     (activeDept.applicationIds && activeDept.applicationIds.includes(app.id)))
-  );
+  const localApplications = applications.filter(app => !app.isGlobal);
 
 
 
@@ -706,7 +724,9 @@ export default function App() {
     );
   }
 
-  // === Barrière d'authentification : connexion obligatoire avant TOUT accès à la plateforme ===
+  // === Accès PUBLIC en lecture ===
+  // La plateforme s'affiche SANS connexion : les visiteurs anonymes voient toutes les infos en lecture seule.
+  // La connexion (via l'en-tête ou #login) ne sert qu'à MODIFIER / accéder à la console d'administration.
   if (!authChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-[#09090b] text-slate-400 text-sm font-mono">
@@ -714,14 +734,8 @@ export default function App() {
       </div>
     );
   }
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen relative bg-zinc-50 dark:bg-[#09090b] flex flex-col justify-center font-sans text-zinc-900 dark:text-zinc-100 py-10">
-        <LoginView onLoginSuccess={handleLoginSuccess} notice={expiredNotice} />
-      </div>
-    );
-  }
-  if (currentUser.mustChangePassword) {
+  // Seul cas où l'on force un écran : un utilisateur CONNECTÉ qui doit renouveler son mot de passe.
+  if (currentUser && currentUser.mustChangePassword) {
     return (
       <div className="min-h-screen relative bg-zinc-50 dark:bg-[#09090b] flex flex-col justify-center font-sans text-zinc-900 dark:text-zinc-100 py-10">
         <ChangePasswordView currentUser={currentUser} forced reason={currentUser.passwordChangeReason} onSuccess={handleMustChangeDone} onLogout={handleLogout} />
@@ -729,8 +743,17 @@ export default function App() {
     );
   }
 
+  // Vues « espace direction » rendues en app-shell (sidebar pleine hauteur collée au mur gauche,
+  // header + footer décalés pour ne former qu'une seule entité avec la sidebar).
+  const DEPARTMENT_VIEWS = ['home', 'about', 'team', 'presentation', 'attributions', 'mission', 'engagement', 'valeurs', 'news', 'projects', 'contacts', 'documents'];
+  const isDepartmentShell = !!activeDept && DEPARTMENT_VIEWS.includes(currentView);
+  // La console admin partage le même app-shell (sidebar pleine hauteur + header/footer décalés),
+  // uniquement quand la vraie console est affichée (pas l'écran de connexion).
+  const isAdminShell = currentView === 'admin' && authChecked && !!currentUser && currentUser.role !== 'agent';
+  const isAppShell = isDepartmentShell || isAdminShell;
+
   return (
-    <div className="min-h-screen relative pt-18 bg-zinc-50 dark:bg-[#09090b] flex flex-col justify-between font-sans selection:bg-emerald-600 dark:selection:bg-emerald-500 selection:text-white text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
+    <div className="min-h-screen relative pt-18 bg-[#F2F8F3] dark:bg-[#09090b] flex flex-col justify-between font-sans selection:bg-emerald-600 dark:selection:bg-emerald-500 selection:text-white text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
       
       {/* Dynamic Header Navbar Wrapper */}
       <Header 
@@ -743,6 +766,7 @@ export default function App() {
         onLogout={handleLogout}
         applications={applications}
         articles={articles}
+        insetLeft={isAppShell}
       />
 
 
@@ -751,37 +775,68 @@ export default function App() {
         <Suspense fallback={<div className="py-24 text-center text-slate-400 text-sm font-mono animate-pulse">Chargement…</div>}>
 
         {/* Sliding Viewports Content using AnimatePresence */}
-        {activeDept && ['home', 'about', 'team', 'portal', 'presentation', 'attributions', 'mission', 'engagement', 'valeurs', 'news', 'projects', 'contacts'].includes(currentView) ? (
-          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in flex-1">
+        {isDepartmentShell ? (
+          <div className="w-full animate-fade-in flex-1">
 
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-              
-              {/* Left Column: Premium e-EDG Corporate Interactive Sidebar */}
-              <div className="lg:col-span-3 lg:sticky lg:top-24 space-y-4">
-                <div 
-                  className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/80 rounded-[24px] p-5 shadow-xl space-y-6 animate-fade-in"
+            <div className="lg:flex">
+
+              {/* Left Column: app-shell — sidebar pleine hauteur collée au mur gauche (fixed left-0),
+                  plus étroite (w-56). Le header étant décalé (lg:left-56), la sidebar possède le coin
+                  haut-gauche → header + sidebar = une seule bande blanche continue, sans ligne. */}
+              <div className="lg:w-56 lg:shrink-0">
+                <div
+                  className="animate-fade-in bg-white dark:bg-slate-900/40 p-4 lg:p-0 lg:flex lg:flex-col lg:fixed lg:left-0 lg:top-0 lg:bottom-0 lg:w-56 lg:border-r border-slate-200 dark:border-white/10 lg:z-20"
                   id="e-edg-intranet-sidebar-panel"
                 >
-                  
-                  {/* e-EDG Design-Aligned Intranet Branding Header */}
-                  <div className="flex items-center justify-between pb-3.5 border-b border-slate-150 dark:border-slate-850/80">
-                    <div className="flex items-center space-x-3">
-                      {/* Custom circular EDG Green logo with gold accents */}
-                      <EdgLogo className="w-9 h-9 shrink-0 rounded-xl shadow-md" />
-                      <div className="min-w-0">
-                        <h1 className="text-sm font-black text-slate-900 dark:text-white leading-none uppercase tracking-tight">EDG S.A.</h1>
-                        <span className="text-[9px] font-sans font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">PORTAIL INTRANET</span>
-                      </div>
+
+                  {/* Logo EDG INTRANET en haut de la sidebar (déplacé depuis le header, qui commence après
+                      elle). Reproduit fidèlement le bloc logo du header, cliquable pour revenir à l'accueil. */}
+                  <div
+                    onClick={() => onNavigate('hub')}
+                    onDoubleClick={() => onNavigate('login')}
+                    title="Double-cliquer pour l'accès sécurisé"
+                    className="px-4 h-16 hidden lg:flex items-center gap-3 border-b border-slate-200/70 dark:border-white/10 shrink-0 cursor-pointer group"
+                  >
+                    <div className="w-9 h-9 shrink-0 relative overflow-hidden group-hover:scale-102 transition-transform duration-200 flex items-center justify-center rounded-lg">
+                      {siteSettings && siteSettings.logo_type === 'custom_url' && siteSettings.logo_url ? (
+                        <img src={siteSettings.logo_url} alt="EDG Logo" className="w-full h-full object-contain rounded-lg" referrerPolicy="no-referrer" />
+                      ) : siteSettings && siteSettings.logo_type === 'custom_text' ? (
+                        <div className="w-full h-full rounded-xl bg-gradient-to-br from-[#048343] to-emerald-600 flex items-center justify-center text-white font-black text-[11px] border border-amber-400 shadow-md">
+                          <span>{siteSettings.logo_text || 'EDG'}</span>
+                        </div>
+                      ) : (
+                        <EdgLogo className="w-full h-full" />
+                      )}
                     </div>
-                    {/* Retro collapse chevron button representing the left header arrow */}
-                    <button 
-                      onClick={() => onNavigate('hub')}
-                      className="p-1 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer"
-                      title="Retour au Hub Global"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="font-sans font-extrabold tracking-tight text-md text-zinc-900 dark:text-white">EDG</span>
+                      <span className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 text-[9px] font-mono font-medium px-2 py-0.5 rounded uppercase tracking-wider">
+                        INTRANET
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Zone défilante : tout SAUF le logo (qui reste fixe en haut de la sidebar) */}
+                  <div className="space-y-3 lg:space-y-0 lg:flex lg:flex-col lg:gap-3 lg:flex-1 lg:overflow-y-auto lg:p-4 scrollbar-hide">
+
+                  {/* Contexte : direction courante + utilisateur connecté (déplacés depuis le header) */}
+                  <div className="px-1 pb-3 border-b border-slate-200/70 dark:border-white/10">
+                    <p className="text-[9px] font-mono uppercase tracking-widest text-slate-400 dark:text-slate-500">Espace direction</p>
+                    <p className="text-[13px] font-extrabold text-slate-900 dark:text-white leading-snug mt-0.5">{activeDept.name}</p>
+                    {currentUser && (
+                      <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-slate-100 dark:border-white/5">
+                        <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-[10px] font-black shrink-0">
+                          {currentUser.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 leading-tight">
+                          <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">{currentUser.name}</p>
+                          <p className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">
+                            {({ agent: 'Agent', chef_service: 'Chef de Service', rh_direction: 'RH / Direction', administrateur: 'Administrateur' } as Record<string, string>)[currentUser.role] || 'Agent'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Main Navigation Stack Menu with Yellow Dot active indicators */}
@@ -789,13 +844,15 @@ export default function App() {
                     {[
                       { type: 'label', text: 'Général' },
                       { label: "Vue d'ensemble", icon: <Home size={15} />, view: "home" },
-                      { label: "Actualités", icon: <Newspaper size={15} />, view: "news" },
-                      { label: "Projets", icon: <Briefcase size={15} />, view: "projects" },
-                      { label: "Contact & Destinataires", icon: <Mail size={15} />, view: "contacts" },
                       { type: 'label', text: 'À Propos' },
                       { label: "Mission", icon: <Target size={15} />, view: "mission" },
                       { label: "Engagement", icon: <ShieldCheck size={15} />, view: "engagement" },
                       { label: "Valeurs", icon: <Sparkles size={15} />, view: "valeurs" },
+                      { type: 'label', text: 'Contenu' },
+                      { label: "Actualités", icon: <Newspaper size={15} />, view: "news" },
+                      { label: "Projets", icon: <Briefcase size={15} />, view: "projects" },
+                      { label: "Bibliothèque", icon: <FileText size={15} />, view: "documents" },
+                      { label: "Contacts", icon: <Mail size={15} />, view: "contacts" },
                       { type: 'label', text: 'Notre équipe' },
                       { label: "Présentation", icon: <Layers size={15} />, view: "presentation" },
                       { label: "Organigramme", icon: <Users size={15} />, view: "team" },
@@ -806,7 +863,7 @@ export default function App() {
                       if ('type' in item && item.type === 'label') {
                         return (
                           <div key={item.text} className="pt-2 px-1 pb-1">
-                            <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-[#048343] dark:text-[#048343]">
+                            <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
                               {item.text}
                             </span>
                           </div>
@@ -819,37 +876,25 @@ export default function App() {
                         <motion.button
                           key={tab.label}
                           onClick={() => onNavigate(tab.view, activeDept.code)}
-                          whileHover={{ 
-                            scale: 1.015, 
-                            x: isActive ? 0 : 4,
-                            boxShadow: isActive 
-                              ? "0 10px 25px -5px rgba(4, 131, 67, 0.3)" 
-                              : "0 4px 12px rgba(0, 0, 0, 0.05)"
-                          }}
-                          whileTap={{ scale: 0.98 }}
+                          whileTap={{ scale: 0.985 }}
                           transition={{ type: "spring", stiffness: 450, damping: 28 }}
-                          className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold font-sans cursor-pointer relative overflow-hidden group/tab ${
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-[13px] font-medium font-sans cursor-pointer relative overflow-hidden group/tab transition-colors ${
                             isActive
-                              ? 'text-white shadow-md shadow-emerald-950/10'
-                              : 'bg-transparent border border-transparent text-slate-550 dark:text-slate-405 hover:text-slate-900 dark:hover:text-white hover:bg-white/90 dark:hover:bg-slate-800/40 hover:border-slate-200/50 dark:hover:border-slate-700/50 transition-colors duration-300'
+                              ? 'text-white'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors duration-300'
                           }`}
                         >
                           {/* Nano-Banana style sliding background pill */}
                           {isActive && (
                             <motion.div
                               layoutId="activeTabPill"
-                              className="absolute inset-0 bg-gradient-to-r from-[#048343] to-[#108548] dark:from-emerald-700/90 dark:to-emerald-800/80 z-0"
+                              className="absolute inset-0 bg-[#2FB344] dark:bg-[#2FB344] z-0"
                               transition={{ type: "spring", stiffness: 350, damping: 26 }}
                             />
                           )}
 
-                          {/* Hover left accent indicator bar for inactive items */}
-                          {!isActive && (
-                            <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-gradient-to-b from-[#048343] to-[#108548] dark:from-emerald-500 dark:to-emerald-400 rounded-r-md opacity-0 group-hover/tab:opacity-100 scale-y-0 group-hover/tab:scale-y-100 transition-all duration-300 origin-center z-20" />
-                          )}
-
                           <div className="flex items-center space-x-2.5 relative z-10 transition-transform duration-300 group-hover/tab:translate-x-1">
-                            <span className={`transition-all duration-300 ${isActive ? "text-white" : "text-slate-400 dark:text-slate-555 group-hover/tab:text-[#048343] dark:group-hover/tab:text-emerald-400 group-hover/tab:scale-110 group-hover/tab:rotate-3"}`}>
+                            <span className={isActive ? "text-white" : "text-slate-400 dark:text-slate-500 group-hover/tab:text-slate-600 dark:group-hover/tab:text-slate-300"}>
                               {tab.icon}
                             </span>
                             <span>{tab.label}</span>
@@ -857,7 +902,7 @@ export default function App() {
                           
                           {/* Active Yellow/Amber Indicator Dot */}
                           {isActive && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 border border-emerald-600 shadow-sm animate-pulse shrink-0 relative z-10"></span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 relative z-10"></span>
                           )}
                         </motion.button>
                       );
@@ -881,11 +926,13 @@ export default function App() {
                     </div>
                   </div>
 
+                  </div>
+
                 </div>
               </div>
 
               {/* Right Column: Clean layout-aligned Content Panel */}
-              <div className="lg:col-span-9 min-w-0">
+              <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-8">
                 <AnimatePresence mode="wait">
                   {currentView === 'home' && (
                     <motion.div
@@ -927,9 +974,21 @@ export default function App() {
                       exit={{ opacity: 0, y: -12 }}
                       transition={{ duration: 0.2 }}
                     >
-                      <ProjectsView 
+                      <ProjectsView
                         department={activeDept}
                       />
+                    </motion.div>
+                  )}
+
+                  {currentView === 'documents' && (
+                    <motion.div
+                      key="documents"
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -12 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <DocumentsView departmentId={activeDept.id} departmentName={activeDept.name} />
                     </motion.div>
                   )}
 
@@ -1003,7 +1062,13 @@ export default function App() {
                       exit={{ opacity: 0, y: -12 }}
                       transition={{ duration: 0.2 }}
                     >
-                      <OrganigrammeView departmentId={activeDept.id} />
+                      <div className="space-y-12">
+                        {/* 1) Organigramme de structure propre à cette direction (sa sous-arborescence contextuelle) */}
+                        <WorkflowView rootUnitId={activeDept.id} />
+                        <div className="border-t border-slate-200 dark:border-white/10" />
+                        {/* 2) Organigramme des postes (fonctions / personnes) */}
+                        <OrganigrammeView departmentId={activeDept.id} />
+                      </div>
                     </motion.div>
                   )}
 
@@ -1019,24 +1084,6 @@ export default function App() {
                     </motion.div>
                   )}
 
-                  {currentView === 'portal' && (
-                    <motion.div
-                      key="portal"
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -12 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <PortalView
-                        department={activeDept}
-                        globalApplications={globalApplications}
-                        localApplications={localApplications}
-                        onNavigate={onNavigate}
-                        currentUser={currentUser}
-                        appHubUrl={siteSettings.app_hub_url}
-                      />
-                    </motion.div>
-                  )}
                 </AnimatePresence>
               </div>
 
@@ -1064,6 +1111,24 @@ export default function App() {
                   siteSettings={siteSettings}
                   teamMembers={teamMembers}
                   authToken={authToken}
+                />
+              </motion.div>
+            )}
+
+            {currentView === 'portal' && (
+              <motion.div
+                key="portal"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <PortalView
+                  globalApplications={globalApplications}
+                  localApplications={localApplications}
+                  onNavigate={onNavigate}
+                  currentUser={currentUser}
+                  appHubUrl={siteSettings.app_hub_url}
                 />
               </motion.div>
             )}
@@ -1096,10 +1161,10 @@ export default function App() {
             {currentView === 'admin' && (
               <motion.div
                 key="admin"
-                className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
+                className={`${isAdminShell ? 'w-full' : 'max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8'} animate-fade-in`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
               >
                 {!authChecked ? (
@@ -1120,6 +1185,7 @@ export default function App() {
                     articles={articles}
                     onChangeArticles={onChangeArticles}
                     authToken={authToken}
+                    onNavigate={onNavigate}
                   />
                 )}
               </motion.div>
@@ -1193,17 +1259,34 @@ export default function App() {
                 <OrganigrammeView onNavigateBack={() => onNavigate('hub')} />
               </motion.div>
             )}
+
+            {currentView === 'structure' && (
+              <motion.div
+                key="structure"
+                className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                <WorkflowView onNavigateBack={() => onNavigate('hub')} />
+              </motion.div>
+            )}
           </AnimatePresence>
         )}
         </Suspense>
       </main>
 
-      {/* Standard Footer */}
-      <Footer 
-        siteSettings={siteSettings} 
-        onNavigate={onNavigate}
-        currentUser={currentUser}
-      />
+      {/* Standard Footer — affiché uniquement sur la page d'accueil (hub) */}
+      {currentView === 'hub' && (
+        <div className={isAppShell ? 'lg:pl-56' : ''}>
+          <Footer
+            siteSettings={siteSettings}
+            onNavigate={onNavigate}
+            currentUser={currentUser}
+          />
+        </div>
+      )}
 
       {/* Floating Announcements & System Updates Notification Hub */}
       <NotificationPanel currentUser={currentUser} authToken={authToken} />

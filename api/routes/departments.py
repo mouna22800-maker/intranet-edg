@@ -46,10 +46,13 @@ def get_public_departments():
     try:
         cursor = conn.cursor()
         
-        # Récupérer d'abord toutes les unités
+        # Récupérer les DIRECTIONS uniquement. Depuis l'ajout des organigrammes contextuels, la table
+        # unity peut aussi contenir des sous-entités (départements, services) ; elles ne doivent pas
+        # apparaître comme des « directions » dans le reste de l'application (sélecteurs, cartes, routage).
         cursor.execute("""
             SELECT id, label as name, code, description, icon, director_name, founded_year, staff_count, theme_color, parent_id
             FROM unity
+            WHERE type = 'Direction' OR type IS NULL
         """)
         rows = cursor.fetchall()
         depts = []

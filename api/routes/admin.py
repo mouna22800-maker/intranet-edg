@@ -7,7 +7,7 @@ from typing import Optional, List
 from api.database import get_db_connection, UPLOAD_DIR
 from api.models import AdminDirectionSaveResponse
 from api.auth import require_role, require_write_department, get_current_user
-from api.sanitize import sanitize_html
+from api.sanitize import sanitize_html, sanitize_plain
 
 router = APIRouter(
     prefix="/admin",
@@ -139,6 +139,9 @@ async def save_direction(
     director_message = sanitize_html(director_message)
     if history_text is not None:
         history_text = sanitize_html(history_text)
+    # La "Mission en chef" (description) est affichée en TEXTE BRUT partout (cartes, recherche, à-propos)
+    # => on retire tout balisage pour ne jamais afficher de <strong> en clair.
+    description = sanitize_plain(description)
 
     if not clean_code or not clean_name or not clean_director:
         raise HTTPException(
@@ -415,23 +418,24 @@ def list_admin_applications():
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, description, url, icon, is_global, category FROM applications")
+        cursor.execute("SELECT id, name, description, url, icon, logo_url, is_global, category FROM applications")
         rows = cursor.fetchall()
         apps = []
         for r in rows:
             # Récupérer l'unité liée si non globale
-            cursor.execute("SELECT unity_id FROM unity_applications WHERE application_id = ?", (r["id"],))
+            cursor.execute("SELECT unity_id FROM unity_applications WHERE application_id = ?", (r["id"] if isinstance(r, dict) else r[0],))
             ua_row = cursor.fetchone()
             dept_id = ua_row["unity_id"] if ua_row else None
 
             apps.append({
-                "id": r["id"],
-                "name": r["name"],
-                "description": r["description"],
-                "url": r["url"],
-                "icon": r["icon"],
-                "isGlobal": bool(r["is_global"]),
-                "category": r["category"],
+                "id": r["id"] if isinstance(r, dict) else r[0],
+                "name": r["name"] if isinstance(r, dict) else r[1],
+                "description": r["description"] if isinstance(r, dict) else r[2],
+                "url": r["url"] if isinstance(r, dict) else r[3],
+                "icon": r["icon"] if isinstance(r, dict) else r[4],
+                "logoUrl": r["logo_url"] if isinstance(r, dict) else r[5],
+                "isGlobal": bool(r["is_global"] if isinstance(r, dict) else r[6]),
+                "category": r["category"] if isinstance(r, dict) else r[7],
                 "departmentId": dept_id
             })
         return {"status": "success", "data": apps}
@@ -448,6 +452,7 @@ def save_admin_application(
     description: str = Form(...),
     url: str = Form(...),
     icon: str = Form("ExternalLink"),
+    logo_url: Optional[str] = Form(None),
     isGlobal: bool = Form(False),
     category: str = Form(...),
     department_id: Optional[int] = Form(None),
@@ -458,17 +463,24 @@ def save_admin_application(
         cursor = conn.cursor()
         is_global_int = 1 if isGlobal else 0
         if id:
+            # Preserve existing logo_url when not explicitly overwritten
+            if logo_url is None:
+                cursor.execute("SELECT logo_url FROM applications WHERE id = ?", (id,))
+                existing = cursor.fetchone()
+                if existing:
+                    logo_url = existing["logo_url"] if isinstance(existing, dict) else existing[0]
+
             cursor.execute("""
                 UPDATE applications
-                SET name = ?, description = ?, url = ?, icon = ?, is_global = ?, category = ?
+                SET name = ?, description = ?, url = ?, icon = ?, logo_url = ?, is_global = ?, category = ?
                 WHERE id = ?
-            """, (name, description, url, icon, is_global_int, category, id))
+            """, (name, description, url, icon, logo_url, is_global_int, category, id))
             app_id = id
         else:
             cursor.execute("""
-                INSERT INTO applications (name, description, url, icon, is_global, category)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (name, description, url, icon, is_global_int, category))
+                INSERT INTO applications (name, description, url, icon, logo_url, is_global, category)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (name, description, url, icon, logo_url, is_global_int, category))
             app_id = cursor.lastrowid
 
         # Gérer la liaison dans unity_applications
@@ -489,6 +501,7 @@ def save_admin_application(
                 "description": description,
                 "url": url,
                 "icon": icon,
+                "logoUrl": logo_url,
                 "isGlobal": isGlobal,
                 "category": category,
                 "departmentId": department_id if not isGlobal else None

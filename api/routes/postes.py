@@ -57,8 +57,8 @@ def _would_create_cycle(cursor, node_id, new_parent_id):
 
 
 @router.get("", response_model=List[PosteResponse])
-def list_postes(current: dict = Depends(get_current_user)):
-    """Sert l'organigramme : tous les postes/fonctions (avec le libellé de leur direction)."""
+def list_postes():
+    """Sert l'organigramme : tous les postes/fonctions (lecture publique)."""
     conn = get_db_connection()
     try:
         cursor = conn.cursor()

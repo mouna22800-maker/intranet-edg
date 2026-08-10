@@ -16,7 +16,7 @@ logger = logging.getLogger("edg")
 # On le déclare explicitement (sinon servi en application/octet-stream, bloqué par nosniff).
 mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/svg+xml", ".svg")
-from api.routes import departments, articles, admin, team, tickets, uploads, auth, documents, users, user_notifications, events, postes
+from api.routes import departments, articles, admin, team, tickets, uploads, auth, documents, users, user_notifications, events, postes, workflows
 
 APP_ENV = os.getenv("APP_ENV", "development").lower()
 IS_PROD = APP_ENV == "production"
@@ -92,6 +92,7 @@ app.include_router(users.router)
 app.include_router(user_notifications.router)
 app.include_router(events.router)
 app.include_router(postes.router)
+app.include_router(workflows.router)
 
 app.include_router(departments.router, prefix="/api")
 app.include_router(articles.router, prefix="/api")
@@ -105,6 +106,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(user_notifications.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 app.include_router(postes.router, prefix="/api")
+app.include_router(workflows.router, prefix="/api")
 
 # Sert les fichiers téléversés (images d'actualités, de projets, logos, documents...) en statique
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")

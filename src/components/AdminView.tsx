@@ -10,14 +10,15 @@ import { getMediaBgStyle } from './imageStyle';
 import RichTextEditor from './RichTextEditor';
 import AuditLogView from './AuditLogView';
 import PostesAdmin from './PostesAdmin';
+import OrganigrammeAdmin from './OrganigrammeAdmin';
 import EdgLogo from './EdgLogo';
+import { ARTICLE_CATEGORIES } from './articleCategories';
 import { apiFetch } from '../api';
 import { useToast } from './Toast';
 import { 
-  Building2, 
-  Link2, 
-  Users2, 
-  Sliders, 
+  Building2,
+  Link2,
+  Sliders,
   Plus, 
   Edit3, 
   Trash2, 
@@ -43,7 +44,10 @@ import {
   Clock,
   Network,
   User2,
-  Download
+  Download,
+  BookOpen,
+  Layers,
+  Workflow
 } from 'lucide-react';
 
 interface TeamMember {
@@ -56,6 +60,86 @@ interface TeamMember {
   bio: string;
   responsibilities: string[];
   hierarchy_order: number; // 1 for Director, 2 for head, etc.
+}
+
+// Métadonnées d'affichage de l'utilisateur connecté dans la sidebar (dégradé d'avatar + libellé de rôle).
+const ADMIN_ROLE_META: Record<string, { gradient: string; label: string }> = {
+  administrateur: { gradient: 'bg-gradient-to-tr from-violet-600 to-purple-500', label: 'Administrateur' },
+  rh_direction: { gradient: 'bg-gradient-to-tr from-rose-600 to-pink-500', label: 'RH / Direction' },
+  chef_service: { gradient: 'bg-gradient-to-tr from-amber-600 to-orange-500', label: 'Chef de Service' },
+  agent: { gradient: 'bg-gradient-to-tr from-blue-600 to-indigo-500', label: 'Agent' },
+};
+
+function getUserInitials(name?: string) {
+  if (!name) return 'U';
+  const parts = name.trim().split(' ');
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return parts[0].substring(0, 2).toUpperCase();
+}
+
+/**
+ * Intitulé de groupe du rail de navigation de la console.
+ * Masqué en mobile, où le rail devient une simple barre défilante horizontale.
+ */
+function AdminNavSection({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="hidden lg:block px-3 pt-4 pb-1 text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 select-none">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Entrée du rail de navigation de la console d'administration.
+ * Un seul composant pour les onze onglets : le style se règle ici, plus dans chaque bouton.
+ * L'onglet actif est signalé par une barre d'accent verte EDG et un fond très légèrement teinté,
+ * plutôt que par un aplat saturé qui écrasait le reste du menu.
+ */
+function AdminNavItem({
+  icon: Icon,
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  label: string;
+  count?: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      className={`group relative w-full text-left pl-4 pr-2.5 py-2.5 rounded-xl flex items-center gap-2.5 text-xs transition-colors cursor-pointer whitespace-nowrap shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 ${
+        active
+          ? 'bg-[#2FB344] text-white font-bold'
+          : 'text-slate-600 dark:text-slate-400 font-semibold hover:bg-slate-100/80 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
+      }`}
+    >
+      <Icon
+        size={15}
+        className={`shrink-0 ${
+          active
+            ? 'text-white'
+            : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+        }`}
+      />
+      <span className="flex-1 truncate">{label}</span>
+      {typeof count === 'number' && (
+        <span
+          className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md tabular-nums shrink-0 ${
+            active
+              ? 'bg-white/25 text-white'
+              : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-400'
+          }`}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
 }
 
 // --- HELPER FUNCTIONS FOR ALL DYNAMIC SUBSECTIONS ---
@@ -216,6 +300,8 @@ interface AdminViewProps {
   articles: Article[];
   onChangeArticles: (newArticles: Article[]) => void;
   authToken: string | null;
+  /** Navigation globale (utilisée par le logo EDG de la sidebar pour revenir à l'accueil). */
+  onNavigate?: (view: string, deptCode?: string) => void;
 }
 
 export default function AdminView({
@@ -230,7 +316,8 @@ export default function AdminView({
   currentUser,
   articles,
   onChangeArticles,
-  authToken
+  authToken,
+  onNavigate
 }: AdminViewProps) {
   const isAdministrateur = currentUser?.role === 'administrateur';
   const isRhDirection = currentUser?.role === 'rh_direction';
@@ -243,6 +330,88 @@ export default function AdminView({
     isAdministrateur ? 'depts' : isRhDirection ? 'postes' : 'articles'
   );
 
+  const [editingApp, setEditingApp] = useState<Partial<Application> | null>(null);
+  const [appForm, setAppForm] = useState<Partial<Application>>({
+    id: 0,
+    name: '',
+    description: '',
+    url: '',
+    icon: 'ExternalLink',
+    logoUrl: undefined,
+    isGlobal: true,
+    category: 'Productivité',
+    departmentId: departments[0]?.id
+  });
+
+  const generateTempAppId = () => Math.min(0, ...applications.map((a) => a.id)) - 1;
+
+  const resetAppForm = () => setAppForm({
+    id: 0,
+    name: '',
+    description: '',
+    url: '',
+    icon: 'ExternalLink',
+    logoUrl: undefined,
+    isGlobal: true,
+    category: 'Productivité',
+    departmentId: departments[0]?.id
+  });
+
+  const handleCreateAppClick = () => {
+    setEditingApp({ id: 0 });
+    resetAppForm();
+  };
+
+  const handleEditAppClick = (app: Application) => {
+    setEditingApp(app);
+    setAppForm({ ...app, logoUrl: app.logoUrl });
+  };
+
+  const handleCancelAppEdit = () => {
+    setEditingApp(null);
+    resetAppForm();
+  };
+
+  const handleSaveApp = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!appForm.name?.trim() || !appForm.url?.trim()) {
+      showNotification('err', 'Le nom et l’URL sont requis pour enregistrer une application.');
+      return;
+    }
+
+    const isGlobal = appForm.isGlobal !== false;
+    const storedApp: Application = {
+      id: editingApp?.id === 0 ? generateTempAppId() : (appForm.id as number),
+      name: appForm.name.trim(),
+      description: appForm.description?.trim() || '',
+      url: appForm.url.trim(),
+      icon: appForm.icon || 'ExternalLink',
+      logoUrl: appForm.logoUrl?.trim() || undefined,
+      isGlobal,
+      category: appForm.category?.trim() || 'Productivité',
+      departmentId: isGlobal ? undefined : Number(appForm.departmentId) || departments[0]?.id
+    };
+
+    const updatedApps = editingApp?.id === 0
+      ? [...applications, storedApp]
+      : applications.map((currentApp) => (currentApp.id === storedApp.id ? storedApp : currentApp));
+
+    onChangeApplications(updatedApps);
+    setEditingApp(null);
+    resetAppForm();
+    showNotification('success', `Application ${editingApp?.id === 0 ? 'ajoutée' : 'mise à jour'} avec succès.`);
+  };
+
+  const handleDeleteApp = (app: Application) => {
+    if (!confirm(`Voulez-vous vraiment supprimer l'application "${app.name}" ?`)) return;
+    onChangeApplications(applications.filter((currentApp) => currentApp.id !== app.id));
+    if (editingApp?.id === app.id) {
+      setEditingApp(null);
+      resetAppForm();
+    }
+    showNotification('success', 'Application supprimée.');
+  };
 
   // Status feedback messages (bandeau flottant global, cohérent sur toute l'application)
   const { showToast } = useToast();
@@ -1194,6 +1363,7 @@ export default function AdminView({
     title: '',
     excerpt: '',
     content: '',
+    category: 'communique',
     tags: '',
     isGlobal: true,
     departmentId: departments[0]?.id || 13,
@@ -1209,6 +1379,7 @@ export default function AdminView({
       title: '',
       excerpt: '',
       content: '',
+      category: 'communique',
       tags: 'EDG, Note, Circulaire',
       isGlobal: canCreateGlobal,
       departmentId: userUnityId || departments[0]?.id || 13,
@@ -1224,6 +1395,7 @@ export default function AdminView({
       title: art.title,
       excerpt: art.excerpt,
       content: art.content,
+      category: art.category || 'communique',
       tags: art.tags.join(', '),
       isGlobal: art.isGlobal,
       departmentId: art.departmentId || departments[0]?.id || 13,
@@ -1246,11 +1418,16 @@ export default function AdminView({
       .map(t => t.trim())
       .filter(t => t.length > 0);
 
+    // Chapeau auto-généré depuis le contenu : on retire les balises HTML (sinon on verrait des <strong> en clair).
+    const contentPlain = articleForm.content.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    const autoExcerpt = contentPlain.length > 160 ? contentPlain.slice(0, 160).trimEnd() + '…' : contentPlain;
+
     const articleData: Article = {
       id: editingArticle?.id === 0 ? (articles.length > 0 ? Math.max(...articles.map(a => a.id)) + 1 : 1) : (editingArticle?.id as number),
       title: articleForm.title.trim(),
-      excerpt: articleForm.excerpt.trim() || (articleForm.content.slice(0, 100) + '...'),
+      excerpt: articleForm.excerpt.trim() || autoExcerpt,
       content: articleForm.content.trim(),
+      category: articleForm.category,
       tags: tagsArray,
       isGlobal: articleForm.isGlobal,
       departmentId: articleForm.isGlobal ? undefined : Number(articleForm.departmentId),
@@ -1424,178 +1601,183 @@ export default function AdminView({
   };
 
   return (
-    <div id="cms-dashboard-container" className="space-y-8 pb-16 font-sans">
-      
-      {/* Intranet CRM Header Indicator */}
-      <div className="bg-white/45 dark:bg-slate-900/40 backdrop-blur-md border border-white/60 dark:border-white/10 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
-        <div className="space-y-1">
-          <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 bg-emerald-500/10 border border-emerald-300 text-emerald-700 dark:text-emerald-400 rounded-full text-[10px] font-mono font-bold tracking-widest uppercase mb-1">
-            <Sliders size={11} className="inline mr-1" />
-            <span>Panneau d'Administration de l'Intranet</span>
-          </span>
-          <h2 className="font-display font-black text-2xl text-slate-900 dark:text-white tracking-tight">
-            Espace d'Administration Général de l'EDG
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xl font-sans leading-relaxed">
-            Créez et configurez les directions, raccordez les logiciels métiers, organisez l'organigramme de l'équipe et modifiez les paramètres institutionnels d'EDG SA.
-          </p>
-        </div>
-      </div>
+    <div id="cms-dashboard-container" className="font-sans">
+      <div className="lg:flex">
 
-      {/* Grid Tabs and Contents */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        {/* Navigation Admin Menu Menu Rail */}
-        <div className="lg:col-span-3 flex lg:flex-col gap-1 overflow-x-auto pb-2 lg:pb-0 scrollbar-none border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-white/10 pr-0 lg:pr-6">
-          {(isRhDirection || isAdministrateur) && (
-            <>
-              <button
-                onClick={() => { setActiveTab('recipients'); setEditingRecipient(null); }}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'recipients'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <PhoneCall size={15} />
-                <span>Contacts d'urgence ({adminRecipients.length})</span>
-              </button>
+        {/* Sidebar app-shell : rail de nav FIXE collé au mur gauche, comme les espaces direction */}
+        <div className="lg:w-56 lg:shrink-0">
+          <nav
+            aria-label="Sections d'administration"
+            className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible p-4 lg:p-0 max-lg:border-b max-lg:border-slate-200 lg:fixed lg:left-0 lg:top-0 lg:bottom-0 lg:w-56 lg:bg-white lg:dark:bg-slate-900/40 lg:border-r lg:border-slate-200 lg:dark:border-white/10 lg:z-20"
+          >
+            {/* Logo EDG en haut de la sidebar (le header est décalé à droite sur la console) */}
+            <div
+              onClick={() => onNavigate?.('hub')}
+              title="Retour à l'accueil"
+              className="hidden lg:flex items-center gap-3 h-16 px-4 border-b border-slate-200/70 dark:border-white/10 shrink-0 cursor-pointer group"
+            >
+              <div className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg group-hover:scale-102 transition-transform duration-200">
+                <EdgLogo className="w-full h-full" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-sans font-extrabold tracking-tight text-md text-zinc-900 dark:text-white">EDG</span>
+                <span className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 text-[9px] font-mono font-medium px-2 py-0.5 rounded uppercase tracking-wider">ADMIN</span>
+              </div>
+            </div>
 
-              <button
-                onClick={() => setActiveTab('postes')}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'postes'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Network size={15} />
-                <span>Organigramme (postes)</span>
-              </button>
-            </>
-          )}
+            {/* Zone défilante : tout SAUF le logo (qui reste fixe en haut de la sidebar) */}
+            <div className="contents lg:flex lg:flex-col lg:gap-1 lg:flex-1 lg:overflow-y-auto lg:p-4 scrollbar-hide">
+
+            {/* Carte « utilisateur connecté » */}
+            {currentUser && (
+              <div className="hidden lg:block mb-3 rounded-2xl bg-gradient-to-br from-[#E21B23] to-[#b0141a] p-3.5 text-white shadow-lg shadow-[#E21B23]/25">
+                {/* Identité */}
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-full bg-white/20 ring-1 ring-white/40 flex items-center justify-center text-[12px] font-black shrink-0">
+                    {getUserInitials(currentUser.name)}
+                  </div>
+                  <div className="min-w-0 leading-tight">
+                    <p className="text-[12.5px] font-extrabold truncate">{currentUser.name}</p>
+                    <p className="text-[9px] font-mono uppercase tracking-wider text-white/85 truncate">
+                      {ADMIN_ROLE_META[currentUser.role]?.label || 'Agent'}
+                    </p>
+                  </div>
+                </div>
+                {/* Infos complémentaires */}
+                <div className="mt-3 pt-2.5 border-t border-white/25 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[10px] text-white/90">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 shrink-0 animate-pulse"></span>
+                    <span className="font-semibold">Session active</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] text-white/85 min-w-0">
+                    <Mail size={11} className="shrink-0" />
+                    <span className="truncate">{currentUser.email}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
           {(isChefService || isRhDirection || isAdministrateur) && (
             <>
-              <button
+              <AdminNavSection>Contenu</AdminNavSection>
+              <AdminNavItem
+                icon={FileText}
+                label="Actualités & circulaires"
+                count={articles.length}
+                active={activeTab === 'articles'}
                 onClick={() => { setActiveTab('articles'); setEditingArticle(null); }}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'articles'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <FileText size={15} />
-                <span>Actualités & Circulaires ({articles.length})</span>
-              </button>
-
-              <button
+              />
+              <AdminNavItem
+                icon={FolderKanban}
+                label="Projets de directions"
+                count={adminProjects.length}
+                active={activeTab === 'projects'}
                 onClick={() => { setActiveTab('projects'); setEditingProject(null); }}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'projects'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <FolderKanban size={15} />
-                <span>Projets de directions ({adminProjects.length})</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('tickets')}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'tickets'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Inbox size={15} />
-                <span>Tickets ({ticketTotal})</span>
-              </button>
-
-              <button
+              />
+              <AdminNavItem
+                icon={BookOpen}
+                label="Bibliothèque"
+                count={adminDocuments.length}
+                active={activeTab === 'documents'}
                 onClick={() => setActiveTab('documents')}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'documents'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <FileText size={15} />
-                <span>Bibliothèque ({adminDocuments.length})</span>
-              </button>
+              />
+              <AdminNavItem
+                icon={Inbox}
+                label="Tickets"
+                count={ticketTotal}
+                active={activeTab === 'tickets'}
+                onClick={() => setActiveTab('tickets')}
+              />
+            </>
+          )}
+
+          {(isRhDirection || isAdministrateur) && (
+            <>
+              <AdminNavSection>Organisation</AdminNavSection>
+              <AdminNavItem
+                icon={Network}
+                label="Organigramme (postes)"
+                active={activeTab === 'postes'}
+                onClick={() => setActiveTab('postes')}
+              />
+              <AdminNavItem
+                icon={Workflow}
+                label="Organigrammes / circuits"
+                active={activeTab === 'workflows'}
+                onClick={() => setActiveTab('workflows')}
+              />
+              <AdminNavItem
+                icon={PhoneCall}
+                label="Contacts d'urgence"
+                count={adminRecipients.length}
+                active={activeTab === 'recipients'}
+                onClick={() => { setActiveTab('recipients'); setEditingRecipient(null); }}
+              />
             </>
           )}
 
           {isAdministrateur && (
             <>
-              <button
+              <AdminNavSection>Système</AdminNavSection>
+              <AdminNavItem
+                icon={Building2}
+                label="Directions"
+                count={departments.length}
+                active={activeTab === 'depts'}
                 onClick={() => { setActiveTab('depts'); setEditingDept(null); }}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'depts'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Building2 size={15} />
-                <span>Directions ({departments.length})</span>
-              </button>
-
-              <button
+              />
+              <AdminNavItem
+                icon={Link2}
+                label="Portail applicatif"
+                count={applications.length}
+                active={activeTab === 'apps'}
                 onClick={() => setActiveTab('apps')}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'apps'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Link2 size={15} />
-                <span>Applications ({applications.length})</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('settings')}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'settings'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Sliders size={15} />
-                <span>Configurations</span>
-              </button>
-
-              <button
+              />
+              <AdminNavItem
+                icon={User2}
+                label="Comptes"
+                active={activeTab === 'users'}
                 onClick={() => setActiveTab('users')}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'users'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <User2 size={15} />
-                <span>Comptes</span>
-              </button>
-
-              <button
+              />
+              <AdminNavItem
+                icon={Sliders}
+                label="Configurations"
+                active={activeTab === 'settings'}
+                onClick={() => setActiveTab('settings')}
+              />
+              <AdminNavItem
+                icon={ShieldCheck}
+                label="Journal de sécurité"
+                active={activeTab === 'audit'}
                 onClick={() => setActiveTab('audit')}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center space-x-3 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'audit'
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black shadow-lg shadow-emerald-500/25'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <ShieldCheck size={15} />
-                <span>Journal de sécurité</span>
-              </button>
+              />
             </>
           )}
-
-
+          </div>
+          </nav>
         </div>
 
-        {/* Dynamic Action Content panel (9/12 column) */}
-        <div className="lg:col-span-9 bg-white/45 dark:bg-slate-900/40 backdrop-blur-md border border-white/60 dark:border-white/10 rounded-3xl shadow-xl p-6 sm:p-8 text-slate-800 dark:text-slate-200">
+        {/* Colonne contenu — décalée à droite de la sidebar fixe */}
+        <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+          {/* Bandeau titre de la console */}
+          <div className="bg-white/45 dark:bg-slate-900/40 backdrop-blur-md border border-white/60 dark:border-white/10 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
+            <div className="space-y-1">
+              <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 bg-emerald-500/10 border border-emerald-300 text-emerald-700 dark:text-emerald-400 rounded-full text-[10px] font-mono font-bold tracking-widest uppercase mb-1">
+                <Sliders size={11} className="inline mr-1" />
+                <span>Panneau d'Administration de l'Intranet</span>
+              </span>
+              <h2 className="font-display font-black text-2xl text-slate-900 dark:text-white tracking-tight">
+                Espace d'Administration Général de l'EDG
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xl font-sans leading-relaxed">
+                Créez et configurez les directions, raccordez les logiciels métiers, organisez l'organigramme de l'équipe et modifiez les paramètres institutionnels d'EDG SA.
+              </p>
+            </div>
+          </div>
+
+          {/* Dynamic Action Content panel */}
+          <div className="bg-white/45 dark:bg-slate-900/40 backdrop-blur-md border border-white/60 dark:border-white/10 rounded-3xl shadow-xl p-6 sm:p-8 text-slate-800 dark:text-slate-200">
 
           {/* TAB 1: GESTION DIRECTIONS */}
           {activeTab === 'depts' && (
@@ -1622,45 +1804,54 @@ export default function AdminView({
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {departments.map((dept) => (
-                      <div 
-                        key={dept.id} 
-                        className="border border-slate-200 rounded-2xl p-4.5 flex flex-col justify-between hover:border-emerald-400 hover:shadow-sm transition-all bg-slate-50/40"
+                      <div
+                        key={dept.id}
+                        onClick={() => handleEditDeptClick(dept)}
+                        className="group relative overflow-hidden border border-slate-200 dark:border-white/10 rounded-2xl bg-white dark:bg-slate-900/40 flex flex-col justify-between hover:border-emerald-300 dark:hover:border-emerald-500/30 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
                       >
-                        <div>
-                          <div className="flex items-start justify-between">
-                            <span className="font-mono font-bold text-xs uppercase bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded">
-                              Sigle : {dept.code}
+                        {/* Accent vert EDG discret (gauche), se renforce au survol */}
+                        <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500/70 group-hover:bg-emerald-500 group-hover:w-1.5 transition-all" />
+
+                        <div className="p-4.5 pl-5">
+                          {/* En-tête : sigle + icône */}
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="font-mono font-bold text-[10px] uppercase tracking-wider bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md">
+                              {dept.code}
                             </span>
-                            <div className="text-emerald-600">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                               <LucideIcon name={dept.icon} size={18} />
                             </div>
                           </div>
-                          <h4 className="font-display font-extrabold text-sm text-slate-900 mt-2 line-clamp-1">{dept.name}</h4>
-                          <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed h-8">
-                            {dept.description}
+
+                          <h4 className="font-display font-extrabold text-sm text-slate-900 dark:text-white mt-2.5 line-clamp-1 group-hover:text-emerald-700 dark:group-hover:text-emerald-300 transition-colors">{dept.name}</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed min-h-[2.25rem]">
+                            {dept.description || <span className="italic text-slate-400">Aucune description renseignée.</span>}
                           </p>
 
-                          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2 text-[11px] text-slate-500">
-                            <div>
-                              <p className="font-semibold text-slate-800 truncate">Dir: {dept.directorName}</p>
+                          {/* Directeur + méta */}
+                          <div className="mt-3.5 pt-3.5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-[10px] font-black shrink-0">
+                                {getUserInitials(dept.directorName)}
+                              </div>
+                              <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate">{dept.directorName}</p>
                             </div>
-                            <div className="text-right">
-                              <p>{dept.staffCount} agents • Établi {dept.foundedYear}</p>
-                            </div>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 whitespace-nowrap shrink-0">{dept.staffCount} agents · {dept.foundedYear}</p>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-end space-x-2 mt-4 pt-2">
+                        {/* Actions */}
+                        <div className="flex items-center justify-end gap-1.5 px-4.5 pb-4">
                           <button
-                            onClick={() => handleEditDeptClick(dept)}
-                            className="p-1.5 bg-slate-100 hover:bg-emerald-100 hover:text-emerald-900 text-slate-600 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); handleEditDeptClick(dept); }}
+                            className="px-2.5 py-1.5 bg-[#FCE500]/20 dark:bg-[#FCE500]/15 text-amber-800 dark:text-amber-300 border border-[#FCE500]/60 dark:border-[#FCE500]/30 hover:bg-[#FCE500]/35 rounded-lg text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
                           >
                             <Edit3 size={12} />
                             <span>Modifier</span>
                           </button>
                           <button
-                            onClick={() => handleDeleteDept(dept.id, dept.code)}
-                            className="p-1.5 bg-slate-100 hover:bg-red-100 hover:text-red-900 text-slate-400 rounded-lg cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteDept(dept.id, dept.code); }}
+                            className="p-1.5 bg-slate-100 dark:bg-white/5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 rounded-lg cursor-pointer transition-colors"
                             title="Supprimer la direction"
                           >
                             <Trash2 size={12} />
@@ -1719,10 +1910,13 @@ export default function AdminView({
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Mission en chef (Une ligne d'introduction)</label>
-                      <RichTextEditor
+                      {/* Texte simple : cette phrase est affichée en texte brut partout (cartes, recherche, à-propos). */}
+                      <textarea
+                        rows={2}
                         value={deptForm.description}
-                        onChange={(html) => setDeptForm(prev => ({ ...prev, description: html }))}
+                        onChange={(e) => setDeptForm(prev => ({ ...prev, description: e.target.value }))}
                         placeholder="Une phrase courte résumant le périmètre d'action..."
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-400 shadow-sm resize-y leading-normal"
                       />
                     </div>
 
@@ -2325,20 +2519,248 @@ export default function AdminView({
           {activeTab === 'apps' && (
             <div className="space-y-6">
               {/* Hub applicatif : le lien UNIQUE regroupant toutes les applis EDG (accès direct depuis le Portail) */}
-              <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 rounded-2xl p-5">
-                <label className="block text-[11px] font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-wider mb-1.5">🔗 Hub applicatif — lien unique</label>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2.5 leading-relaxed max-w-2xl">
-                  Collez ici le lien de l'application qui regroupe toutes les applis EDG. Il s'affichera en gros bouton d'accès direct en haut du <strong>Portail applicatif</strong> de chaque direction.
-                </p>
-                <input
-                  type="url"
-                  placeholder="https://apps.edg.com.gn"
-                  value={appHubUrl}
-                  onChange={(e) => { const val = e.target.value; setAppHubUrl(val); handleLiveUpdateField('app_hub_url', val); }}
-                  className="w-full max-w-2xl px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 rounded-lg text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400 font-medium transition-all"
-                />
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="font-display font-extrabold text-lg text-slate-900 dark:text-white">Gestion des applications</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl">
+                    Ajoutez des cartes d'accès direct vers les applications métiers. Les applications globales sont affichées pour toutes les directions ; les applications locales sont liées à une direction spécifique.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateAppClick}
+                  className="inline-flex items-center justify-center rounded-xl bg-[#048343] hover:bg-emerald-700 text-white px-4 py-2 text-xs font-bold shadow-sm transition-colors"
+                >
+                  <PlusCircle size={14} className="mr-2" />
+                  Ajouter une application
+                </button>
               </div>
 
+              {editingApp ? (
+                <form onSubmit={handleSaveApp} className="space-y-6 rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/40 p-5 sm:p-6 shadow-sm">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Nom de l'application</label>
+                      <input
+                        type="text"
+                        value={appForm.name || ''}
+                        onChange={(e) => setAppForm((prev) => ({ ...prev, name: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-lg text-xs text-slate-800 dark:text-white focus:outline-none focus:border-emerald-400 transition-all"
+                        placeholder="Ex : Gestion des interventions"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">URL de l'application</label>
+                      <input
+                        type="url"
+                        value={appForm.url || ''}
+                        onChange={(e) => setAppForm((prev) => ({ ...prev, url: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-lg text-xs text-slate-800 dark:text-white focus:outline-none focus:border-emerald-400 transition-all"
+                        placeholder="https://app.edg.com.gn/gestion"
+                      />
+                    </div>
+                    <div className="lg:col-span-2">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Description</label>
+                      <textarea
+                        rows={3}
+                        value={appForm.description || ''}
+                        onChange={(e) => setAppForm((prev) => ({ ...prev, description: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-lg text-xs text-slate-800 dark:text-white focus:outline-none focus:border-emerald-400 transition-all resize-y"
+                        placeholder="Décrivez l'usage principal de l'application."
+                      />
+                    </div>
+                    <div className="lg:col-span-2">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Logo de l'application</label>
+                      <div className="grid gap-2">
+                        <label className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors">
+                          Choisir un fichier de logo
+                          <input
+                            type="file"
+                            accept=".jpg,.jpeg,.png,.webp,.gif"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                await handleImageUpload(file, (url) => setAppForm((prev) => ({ ...prev, logoUrl: url })));
+                              }
+                            }}
+                            className="sr-only"
+                          />
+                        </label>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">Formats : JPG, PNG, WEBP, GIF. Max 5 Mo.</p>
+                        {appForm.logoUrl && (
+                          <div className="mt-2 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950">
+                            <img src={appForm.logoUrl} alt="Aperçu du logo" className="w-full h-20 object-contain" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Catégorie</label>
+                      <input
+                        type="text"
+                        value={appForm.category || 'Productivité'}
+                        onChange={(e) => setAppForm((prev) => ({ ...prev, category: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-lg text-xs text-slate-800 dark:text-white focus:outline-none focus:border-emerald-400 transition-all"
+                        placeholder="Productivité"
+                      />
+                    </div>
+                    <div className="lg:col-span-2 grid gap-3 sm:grid-cols-3">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Portée</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAppForm((prev) => ({ ...prev, isGlobal: true }))}
+                          className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${appForm.isGlobal ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200'}`}
+                        >Global</button>
+                        <button
+                          type="button"
+                          onClick={() => setAppForm((prev) => ({ ...prev, isGlobal: false }))}
+                          className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${appForm.isGlobal ? 'border-slate-200 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200' : 'border-emerald-500 bg-emerald-50 text-emerald-700'}`}
+                        >Locale</button>
+                      </div>
+                      {!appForm.isGlobal && (
+                        <div className="sm:col-span-2">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Direction associée</label>
+                          <select
+                            value={appForm.departmentId || departments[0]?.id || ''}
+                            onChange={(e) => setAppForm((prev) => ({ ...prev, departmentId: Number(e.target.value) }))}
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-lg text-xs text-slate-800 dark:text-white focus:outline-none focus:border-emerald-400 transition-all"
+                          >
+                            {departments.map((dept) => (
+                              <option key={dept.id} value={dept.id}>{dept.name} ({dept.code.toUpperCase()})</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Les applications sont enregistrées immédiatement dans la console une fois validées.
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="submit"
+                        className="inline-flex items-center gap-2 rounded-xl bg-[#048343] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors"
+                      >
+                        <Save size={14} /> Enregistrer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelAppEdit}
+                        className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  {applications.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 bg-white/70 dark:bg-slate-950/60 p-8 text-center">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">Aucune application configurée pour l’instant.</p>
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Cliquez sur "Ajouter une application" pour créer la première carte d’accès direct.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-8">
+                      {applications.filter((app) => app.isGlobal).length > 0 && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="text-xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">Applications globales</p>
+                              <h4 className="font-display font-extrabold text-base text-slate-900 dark:text-white">Accès partagé EDG</h4>
+                            </div>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">{applications.filter((app) => app.isGlobal).length} application{applications.filter((app) => app.isGlobal).length > 1 ? 's' : ''}</span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {applications.filter((app) => app.isGlobal).map((app) => (
+                              <div key={app.id} className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 shadow-sm p-5 space-y-4">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-11 h-11 rounded-2xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-700 dark:text-slate-100 overflow-hidden">
+                                      {app.logoUrl ? (
+                                        <img src={app.logoUrl} alt={`${app.name} logo`} className="w-full h-full object-contain" onError={(e) => { e.currentTarget.remove(); }} />
+                                      ) : (
+                                        <LucideIcon name={app.icon || 'ExternalLink'} size={20} />
+                                      )}
+                                    </div>
+                                    <div>
+                                      <h5 className="font-display font-bold text-sm text-slate-900 dark:text-white">{app.name}</h5>
+                                      <p className="text-[11px] text-slate-500 dark:text-slate-400">{app.url}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                                    <span className="text-[10px] uppercase tracking-[0.18em]">{app.category}</span>
+                                  </div>
+                                </div>
+                                <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400 line-clamp-3">{app.description || 'Aucune description fournie.'}</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button type="button" onClick={() => handleEditAppClick(app)} className="inline-flex items-center gap-2 rounded-full border border-emerald-500 px-3 py-2 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 transition">
+                                    <Edit3 size={14} /> Modifier
+                                  </button>
+                                  <button type="button" onClick={() => handleDeleteApp(app)} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 transition dark:border-slate-800 dark:hover:bg-rose-500/10">
+                                    <Trash2 size={14} /> Supprimer
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {applications.filter((app) => !app.isGlobal).length > 0 && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="text-xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">Applications locales</p>
+                              <h4 className="font-display font-extrabold text-base text-slate-900 dark:text-white">Accès par direction</h4>
+                            </div>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">{applications.filter((app) => !app.isGlobal).length} application{applications.filter((app) => !app.isGlobal).length > 1 ? 's' : ''}</span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {applications.filter((app) => !app.isGlobal).map((app) => {
+                              const department = departments.find((dept) => dept.id === app.departmentId);
+                              return (
+                                <div key={app.id} className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 shadow-sm p-5 space-y-4">
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-11 h-11 rounded-2xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-700 dark:text-slate-100 overflow-hidden">
+                                        {app.logoUrl ? (
+                                          <img src={app.logoUrl} alt={`${app.name} logo`} className="w-full h-full object-contain" onError={(e) => { e.currentTarget.remove(); }} />
+                                        ) : (
+                                          <LucideIcon name={app.icon || 'ExternalLink'} size={20} />
+                                        )}
+                                      </div>
+                                      <div>
+                                        <h5 className="font-display font-bold text-sm text-slate-900 dark:text-white">{app.name}</h5>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400">{app.url}</p>
+                                      </div>
+                                    </div>
+                                    <div className="text-right text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                      {department ? `${department.name}` : 'Direction non associée'}
+                                    </div>
+                                  </div>
+                                  <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400 line-clamp-3">{app.description || 'Aucune description fournie.'}</p>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <button type="button" onClick={() => handleEditAppClick(app)} className="inline-flex items-center gap-2 rounded-full border border-emerald-500 px-3 py-2 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 transition">
+                                      <Edit3 size={14} /> Modifier
+                                    </button>
+                                    <button type="button" onClick={() => handleDeleteApp(app)} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 transition dark:border-slate-800 dark:hover:bg-rose-500/10">
+                                      <Trash2 size={14} /> Supprimer
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -2779,7 +3201,7 @@ export default function AdminView({
 
                   <div className="bg-slate-100 border border-slate-200/80 p-5 rounded-2xl flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className="bg-emerald-500 text-slate-900 rounded-xl p-2 shrink-0">
+                      <div className="bg-emerald-500 text-slate-900 dark:text-slate-900 rounded-xl p-2 shrink-0">
                         <Save className="text-white" size={16} />
                       </div>
                       <div>
@@ -2898,7 +3320,7 @@ export default function AdminView({
 
                     {/* Bottom notes */}
                     <div className="bg-emerald-50 p-3.5 text-[10px] text-emerald-950 flex items-start space-x-2">
-                      <div className="bg-emerald-400 text-slate-900 rounded p-1 shrink-0">
+                      <div className="bg-emerald-400 text-slate-900 dark:text-slate-900 rounded p-1 shrink-0">
                         <Sliders size={12} strokeWidth={2.5} />
                       </div>
                       <p className="leading-relaxed">
@@ -3897,6 +4319,28 @@ export default function AdminView({
                         />
                       </div>
 
+                      {/* Catégorie de l'annonce — détermine icône/couleur/ton sur l'accueil */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-650 uppercase tracking-wider mb-1.5">Catégorie de l'annonce</label>
+                        <div className="flex flex-wrap gap-2">
+                          {ARTICLE_CATEGORIES.map((cat) => {
+                            const selected = articleForm.category === cat.id;
+                            return (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => setArticleForm({ ...articleForm, category: cat.id })}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${selected ? `${cat.badgeClass} font-bold shadow-sm` : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700 dark:bg-white/5 dark:text-slate-400 dark:border-white/10'}`}
+                              >
+                                <LucideIcon name={cat.icon} size={12} />
+                                <span>{cat.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1.5">Choisit comment l'annonce sera présentée sur l'accueil (icône, couleur, ton). « Décès » adopte un ton sobre.</p>
+                      </div>
+
                       <div>
                         <label className="block text-xs font-bold text-slate-650 uppercase tracking-wider mb-1.5">Résumé d'accroche (Excerpt)</label>
                         <input
@@ -4118,6 +4562,10 @@ export default function AdminView({
 
           {activeTab === 'postes' && (isAdministrateur || isRhDirection) && (
             <PostesAdmin departments={departments} />
+          )}
+
+          {activeTab === 'workflows' && (isAdministrateur || isRhDirection) && (
+            <OrganigrammeAdmin />
           )}
 
           {activeTab === 'users' && isAdministrateur && (
@@ -4397,6 +4845,7 @@ export default function AdminView({
             </div>
           )}
 
+        </div>
         </div>
       </div>
     </div>
