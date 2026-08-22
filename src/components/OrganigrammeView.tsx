@@ -70,8 +70,18 @@ function TreeNodes({ nodes }: { nodes: TreeNode[] }) {
   );
 }
 
+function findTreeNode(nodes: TreeNode[], id: number): TreeNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const found = findTreeNode(node.children, id);
+    if (found) return found;
+  }
+  return null;
+}
+
 export default function OrganigrammeView({ onNavigateBack, departmentId }: OrganigrammeViewProps) {
   const [postes, setPostes] = useState<Poste[]>([]);
+  const [selectedRootId, setSelectedRootId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,6 +99,8 @@ export default function OrganigrammeView({ onNavigateBack, departmentId }: Organ
   // Vue intégrée à une direction : on ne garde que ses postes (leur hiérarchie interne).
   const source = departmentId != null ? postes.filter(p => p.unityId === departmentId) : postes;
   const roots = buildTree(source);
+  const selectedRoot = selectedRootId != null ? findTreeNode(roots, selectedRootId) : null;
+  const visibleRoots = selectedRoot ? [selectedRoot] : roots;
 
   return (
     <div className="space-y-6 pb-16 font-sans">
@@ -99,26 +111,49 @@ export default function OrganigrammeView({ onNavigateBack, departmentId }: Organ
       )}
 
       {/* Page header */}
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-white/10 pb-5">
-        <div className="flex items-center space-x-3">
-          <div className="p-2.5 rounded-xl bg-[#048343]/10 text-[#048343] dark:bg-emerald-500/10 dark:text-emerald-400">
-            <Network size={20} />
+      <div className="flex flex-col gap-4 border-b border-slate-200 dark:border-white/10 pb-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-[#048343]/10 text-[#048343] dark:bg-emerald-500/10 dark:text-emerald-400">
+              <Network size={20} />
+            </div>
+            <div>
+              <h2 className="font-display text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                Organigramme des postes
+              </h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                Hiérarchie des fonctions de l'Électricité de Guinée (les personnes occupant les postes sont indiquées à titre indicatif).
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="font-display text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Organigramme des postes
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              Hiérarchie des fonctions de l'Électricité de Guinée (les personnes occupant les postes sont indiquées à titre indicatif).
-            </p>
-          </div>
+          <button
+            onClick={load}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer shrink-0"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Actualiser
+          </button>
         </div>
-        <button
-          onClick={load}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer shrink-0"
-        >
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Actualiser
-        </button>
+
+        {roots.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-mono font-bold uppercase text-slate-400">Racine :</span>
+            <button
+              onClick={() => setSelectedRootId(null)}
+              className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all ${selectedRootId == null ? 'bg-[#048343] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+            >
+              Toutes
+            </button>
+            {roots.map(root => (
+              <button
+                key={root.id}
+                onClick={() => setSelectedRootId(root.id)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all ${selectedRootId === root.id ? 'bg-[#048343] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+              >
+                {root.title}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -133,9 +168,16 @@ export default function OrganigrammeView({ onNavigateBack, departmentId }: Organ
           Aucun poste défini pour l'instant. Un administrateur peut les créer dans la console d'administration.
         </div>
       ) : (
-        <div className="org-tree overflow-x-auto pb-6">
-          <div className="inline-block min-w-full text-center">
-            <TreeNodes nodes={roots} />
+        <div className="space-y-4">
+          {selectedRoot && (
+            <div className="text-sm text-slate-500 dark:text-slate-400 px-3 py-2 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800">
+              Affichage centré sur la racine <span className="font-semibold text-slate-700 dark:text-white">{selectedRoot.title}</span> et ses descendants.
+            </div>
+          )}
+          <div className="org-tree overflow-x-auto pb-6">
+            <div className="inline-block min-w-full text-center">
+              <TreeNodes nodes={visibleRoots} />
+            </div>
           </div>
         </div>
       )}

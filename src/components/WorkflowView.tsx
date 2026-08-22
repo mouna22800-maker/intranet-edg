@@ -108,6 +108,7 @@ export default function WorkflowView({ onNavigateBack, rootUnitId }: WorkflowVie
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [treesByWf, setTreesByWf] = useState<Record<number, TreeNode[]>>({});
   const [selectedWf, setSelectedWf] = useState<number | null>(null);
+  const [showAllContexts, setShowAllContexts] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,8 +143,10 @@ export default function WorkflowView({ onNavigateBack, rootUnitId }: WorkflowVie
           const present = wfs.filter(w => findSubtree(map[w.id] || [], rootUnitId as number));
           const withKids = present.find(w => (findSubtree(map[w.id] || [], rootUnitId as number)?.children.length ?? 0) > 0);
           setSelectedWf((withKids || present[0] || wfs[0])?.id ?? null);
+          setShowAllContexts(present.length > 1);
         } else {
           setSelectedWf(prev => (prev && wfs.some(w => w.id === prev) ? prev : (wfs[0]?.id ?? null)));
+          setShowAllContexts(false);
         }
       } catch {
         if (!cancelled) setError("Impossible de charger les organigrammes.");
@@ -167,6 +170,7 @@ export default function WorkflowView({ onNavigateBack, rootUnitId }: WorkflowVie
     : workflows;
   const presentAnywhere = !scoped || contextButtons.length > 0;
   const currentWf = workflows.find(w => w.id === selectedWf) || null;
+  const visibleWorkflows = showAllContexts ? contextButtons : (currentWf ? [currentWf] : []);
   const headerName = scoped ? (scopedNode?.name || 'la direction') : null;
 
   return (
@@ -206,9 +210,9 @@ export default function WorkflowView({ onNavigateBack, rootUnitId }: WorkflowVie
             {contextButtons.map(w => (
               <button
                 key={w.id}
-                onClick={() => setSelectedWf(w.id)}
+                onClick={() => { setSelectedWf(w.id); setShowAllContexts(false); }}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  selectedWf === w.id
+                  selectedWf === w.id && !showAllContexts
                     ? 'bg-[#048343] text-white shadow-md'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
@@ -216,6 +220,14 @@ export default function WorkflowView({ onNavigateBack, rootUnitId }: WorkflowVie
                 {w.label}
               </button>
             ))}
+            {contextButtons.length > 1 && (
+              <button
+                onClick={() => setShowAllContexts(prev => !prev)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer bg-slate-900 text-white hover:bg-slate-800"
+              >
+                {showAllContexts ? 'Voir un seul organigramme' : 'Voir tous les organigrammes'}
+              </button>
+            )}
           </div>
         )}
         {!scoped && currentWf?.description && <p className="text-xs text-slate-400 dark:text-slate-500 italic">{currentWf.description}</p>}
@@ -251,10 +263,32 @@ export default function WorkflowView({ onNavigateBack, rootUnitId }: WorkflowVie
               {scopedChildCount === 0 && <span className="italic">— aucune sous-entité rattachée à cette direction pour l’instant.</span>}
             </div>
           )}
-          <div className="org-tree overflow-x-auto pb-6">
-            <div className="inline-block min-w-full text-center">
-              <TreeNodes nodes={currentTree} focusSet={focusSet} targetUnitId={scoped ? (rootUnitId as number) : null} />
-            </div>
+          <div className="space-y-10">
+            {visibleWorkflows.map((wf) => {
+              const tree = treesByWf[wf.id] || [];
+              const scopedNodeForWf = scoped && rootUnitId != null ? findSubtree(tree, rootUnitId) : null;
+              const focusSetForWf = scoped && scopedNodeForWf ? collectFocusSet(scopedNodeForWf) : null;
+
+              return (
+                <div key={wf.id} className="rounded-3xl border border-slate-200/60 dark:border-white/10 bg-white/70 dark:bg-slate-950/60 p-5 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                    <div>
+                      <div className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 mb-1">Organigramme</div>
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{wf.label}</h3>
+                      {wf.description && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{wf.description}</p>}
+                    </div>
+                    {showAllContexts && scoped && scopedNodeForWf && (
+                      <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">Direction mise en évidence</div>
+                    )}
+                  </div>
+                  <div className="org-tree overflow-x-auto pb-6">
+                    <div className="inline-block min-w-full text-center">
+                      <TreeNodes nodes={tree} focusSet={showAllContexts ? focusSetForWf : focusSet} targetUnitId={scoped ? (rootUnitId as number) : null} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

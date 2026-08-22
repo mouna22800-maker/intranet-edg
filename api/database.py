@@ -1089,23 +1089,27 @@ def init_db():
     count = res["cnt"] if (res and isinstance(res, dict)) else (res[0] if res else 0)
     if count == 0:
         directions_data = [
-            (1, 'Direction des Achats, Approvisionnement et Logistique', 'logistique', "Gère les acquisitions stratégiques, optimise les stocks de matériel critique (câbles, transformateurs) et pilote la flotte logistique de l'EDG.", 'Truck', 'M. Ibrahima Diallo', 2005, 84, 'amber'),
-            (2, 'Direction des Affaires Financières', 'finance', "Garantit la rigueur budgétaire, gère la comptabilité générale, la trésorerie et structure le financement des grands projets d'infrastructure d'énergie.", 'Briefcase', 'M. Sékou Condé', 1987, 45, 'emerald'),
-            (3, 'Direction des Affaires Juridiques et Contentieux', 'juridique', "Assure la conformité légale de l'EDG, rédige les conventions de partenariat commercial, de concession et gère les litiges judiciaires et assurances.", 'FileText', 'Mme Fatoumata Binta Diallo', 1994, 18, 'indigo'),
-            (4, "Direction de l'Audit Interne", 'audit', "Évalue de manière indépendante les risques opérationnels, la conformité des processus financiers et l'efficacité des procédures de l'EDG.", 'Search', 'M. Mamadou Saliou Sow', 2011, 14, 'slate'),
-            (5, 'Direction Commerciale', 'commercial', "Gère les contrats, la facturation des clients basse et moyenne tension, le déploiement des compteurs prépayés et la relation clientèle nationale.", 'Users', 'M. Lamine Camara', 1987, 382, 'red'),
-            (6, 'Direction de la Distribution', 'distribution', "Supervise l'acheminement final de l'électricité, la commande des réseaux locaux basse tension et la maintenance de proximité du réseau urbain.", 'Zap', 'M. Ansoumane Touré', 1987, 410, 'orange'),
-            (7, 'Direction des Études, Planification et Équipements', 'etudes', "Planifie le développement à long terme du réseau national, réalise les études d'impact et de faisabilité technique et coordonne l'installation d'équipements lourds.", 'TrendingUp', 'Mme Sylla Hadja Camara', 2002, 38, 'teal'),
-            (8, "Direction de la Maîtrise de la Demande et de l'Innovation", 'innovation', "Promeut l'efficacité énergétique, encadre les initiatives d'économies de consommation et pilote les projets de transition innovants d'EDG.", 'Sparkles', 'M. Mohamed Lamine Sylla', 2018, 22, 'violet'),
-            (9, 'Direction de la Production', 'production', "Gère l'exploitation et la maintenance des grands barrages hydroélectriques de Kaléta et Souapiti, ainsi que des centrales thermiques régionales.", 'Cpu', 'M. Ousmane Camara', 1987, 250, 'blue'),
-            (10, 'Direction des Ressources Humaines', 'rh', "Gère les compétences des collaborateurs électriciens de l'EDG, accompagne les carrières, administre la paie et veille à la santé et la formation professionnelle.", 'Users', 'Mme Mariama Barry', 1998, 47, 'emerald'),
-            (11, "Direction des Systèmes d'Information", 'dsi', "Pilote la transformation numérique de l'EDG, assure la haute disponibilité des infrastructures de communication, serveurs clouds et conçoit l'intranet.", 'Laptop', 'M. Amadou Diallo', 2012, 52, 'indigo'),
-            (12, 'Direction du Transport', 'transport', "Gère l'exploitation et la haute maintenance préventive des lignes aériennes haute tension (HTB) d'interconnexion régionale et nationale guinéenne.", 'Target', 'M. Alpha Kabiné Condé', 1991, 110, 'sky')
+            (1, 'Direction des Achats, Approvisionnement et Logistique', 'logistique', "Gère les acquisitions stratégiques, optimise les stocks de matériel critique (câbles, transformateurs) et pilote la flotte logistique de l'EDG.", 'Truck', 'M. Ibrahima Diallo', 2005, 84, 'amber', None),
+            (2, 'Direction des Affaires Financières', 'finance', "Garantit la rigueur budgétaire, gère la comptabilité générale, la trésorerie et structure le financement des grands projets d'infrastructure d'énergie.", 'Briefcase', 'M. Sékou Condé', 1987, 45, 'emerald', None),
+            (3, 'Direction des Affaires Juridiques et Contentieux', 'juridique', "Assure la conformité légale de l'EDG, rédige les conventions de partenariat commercial, de concession et gère les litiges judiciaires et assurances.", 'FileText', 'Mme Fatoumata Binta Diallo', 1994, 18, 'indigo', None),
+            (4, "Direction de l'Audit Interne", 'audit', "Évalue de manière indépendante les risques opérationnels, la conformité des processus financiers et l'efficacité des procédures de l'EDG.", 'Search', 'M. Mamadou Saliou Sow', 2011, 14, 'slate', None),
+            (5, 'Direction Commerciale', 'commercial', "Gère les contrats, la facturation des clients basse et moyenne tension, le déploiement des compteurs prépayés et la relation clientèle nationale.", 'Users', 'M. Lamine Camara', 1987, 382, 'red', None),
+            (6, 'Direction de la Distribution', 'distribution', "Supervise l'acheminement final de l'électricité, la commande des réseaux locaux basse tension et la maintenance de proximité du réseau urbain.", 'Zap', 'M. Ansoumane Touré', 1987, 410, 'orange', None),
+            (7, 'Direction des Études, Planification et Équipements', 'etudes', "Planifie le développement à long terme du réseau national, réalise les études d'impact et de faisabilité technique et coordonne l'installation d'équipements lourds.", 'TrendingUp', 'Mme Sylla Hadja Camara', 2002, 38, 'teal', None),
+            (8, "Direction de la Maîtrise de la Demande et de l'Innovation", 'innovation', "Promeut l'efficacité énergétique, encadre les initiatives d'économies de consommation et pilote les projets de transition innovants d'EDG.", 'Sparkles', 'M. Mohamed Lamine Sylla', 2018, 22, 'violet', None),
+            (9, 'Direction de la Production', 'production', "Gère l'exploitation et la maintenance des grands barrages hydroélectriques de Kaléta et Souapiti, ainsi que des centrales thermiques régionales.", 'Cpu', 'M. Ousmane Camara', 1987, 250, 'blue', None),
+            (10, 'Direction des Ressources Humaines', 'rh', "Gère les compétences des collaborateurs électriciens de l'EDG, accompagne les carrières, administre la paie et veille à la santé et la formation professionnelle.", 'Users', 'Mme Mariama Barry', 1998, 47, 'emerald', None),
+            (11, "Direction des Systèmes d'Information", 'dsi', "Pilote la transformation numérique de l'EDG, assure la haute disponibilité des infrastructures de communication, serveurs clouds et conçoit l'intranet.", 'Laptop', 'M. Amadou Diallo', 2012, 52, 'indigo', None),
+            (12, 'Direction du Transport', 'transport', "Gère l'exploitation et la haute maintenance préventive des lignes aériennes haute tension (HTB) d'interconnexion régionale et nationale guinéenne.", 'Target', 'M. Alpha Kabiné Condé', 1991, 110, 'sky', None),
+            (20, 'Service Infrastructures & Cybersécurité', 'dsi_infra', "Assure la disponibilité, la sécurité et la résilience des infrastructures réseaux, serveurs et systèmes critiques de l'EDG.", 'Server', 'M. Ibrahima Kourouma', 2013, 38, 'sky', 11),
+            (21, 'Service Applications & Développement', 'dsi_apps', "Conçoit, intègre et maintient les applications métiers et portails collaboratifs pour l'ensemble des directions de l'EDG.", 'Cpu', 'Mme Aïssatou Keita', 2014, 34, 'violet', 11),
+            (22, 'Service Support Informatique', 'dsi_support', "Pilote l’assistance technique, le helpdesk et la gestion des postes de travail pour tous les services de l’EDG.", 'Wrench', 'M. Fodé Camara', 2015, 42, 'emerald', 11),
+            (23, 'Service Gouvernance & Architecture SI', 'dsi_arch', "Définit les standards, l’architecture et la gouvernance des systèmes d’information de l’EDG.", 'Layers', 'M. Mamadou Bah', 2016, 28, 'blue', 11)
         ]
         
         cursor.executemany("""
-            INSERT INTO unity (id, label, code, description, icon, director_name, founded_year, staff_count, theme_color)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO unity (id, label, code, description, icon, director_name, founded_year, staff_count, theme_color, parent_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, directions_data)
 
         # Seeding content associated with each Unity
